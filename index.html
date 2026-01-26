@@ -105,10 +105,13 @@
         };
 
         const game = new Phaser.Game(config);
-        let player, roadLines, decorGroup, cursors, smoothSteer = 0;
+        let player, roadLines, decorGroup, enemies, cursors, smoothSteer = 0;
 
         function preload() {
+            // Senin kırmızı yarış aracın
             this.load.image('playerCar', 'car.png');
+            // Serbest gezen diğer araçlar (Burada 'car.png' kullandım ama farklı renkler vereceğiz)
+            this.load.image('enemyCar', 'car.png'); 
         }
 
         function create() {
@@ -129,13 +132,30 @@
 
             roadLines = this.add.group();
             decorGroup = this.add.group();
+            enemies = this.physics.add.group();
+
             for(let i=0; i<12; i++) {
                 roadLines.add(this.add.rectangle(w/2, i * 120, 10, 60, 0xffffff));
                 decorGroup.add(this.add.circle(w/2 - roadW/2 - 60, i * 180, 25, 0x004400));
                 decorGroup.add(this.add.circle(w/2 + roadW/2 + 60, i * 180, 25, 0x004400));
             }
 
+            // Oyuncu Aracı (Kırmızı)
             player = this.physics.add.sprite(w/2, h - 150, 'playerCar').setScale(0.5).setDepth(100);
+            
+            // Serbest araç üretme zamanlayıcısı
+            this.time.addEvent({
+                delay: 2000,
+                callback: () => {
+                    if (!window.controlMode) return;
+                    let xPos = Phaser.Math.Between(w/2 - roadW/2 + 40, w/2 + roadW/2 - 40);
+                    let enemy = enemies.create(xPos, -100, 'enemyCar').setScale(0.5);
+                    // Diğer araçları farklı renklere boyayalım
+                    enemy.setTint(Phaser.Utils.Array.GetRandom([0x0000ff, 0x00ff00, 0xffff00, 0xff00ff]));
+                },
+                loop: true
+            });
+
             cursors = this.input.keyboard.createCursorKeys();
         }
 
@@ -145,13 +165,11 @@
             // 1. KLAVYE İÇİN STICKY STEERING (Sürekli Direksiyon)
             if (window.controlMode === 'keyboard') {
                 if (cursors.left.isDown) {
-                    steeringInput -= 0.05; // Yavaşça sola kır
+                    steeringInput -= 0.05;
                 } else if (cursors.right.isDown) {
-                    steeringInput += 0.05; // Yavaşça sağa kır
+                    steeringInput += 0.05;
                 }
-                // steeringInput'u -1 ve 1 arasında sınırla
                 steeringInput = Phaser.Math.Clamp(steeringInput, -1, 1);
-                
                 throttleInput = cursors.up.isDown ? 0.2 : 0.8;
             }
 
@@ -167,6 +185,12 @@
             decorGroup.getChildren().forEach(d => {
                 d.y += speed;
                 if (d.y > this.cameras.main.height) d.y = -100;
+            });
+
+            // Serbest araçları hareket ettir
+            enemies.getChildren().forEach(enemy => {
+                enemy.y += speed * 0.7; // Diğer araçlar bizden biraz daha yavaş gitsin
+                if (enemy.y > this.cameras.main.height + 100) enemy.destroy();
             });
 
             let roadLimit = this.cameras.main.width * 0.25;
