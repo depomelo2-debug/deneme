@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S23 Ultra - AI Racer Pro</title>
+    <title>S23 Ultra - AI Road Fighter</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #222; font-family: 'Courier New', Courier, monospace; }
         #video-preview { 
-            position: absolute; top: 10px; right: 10px; width: 140px; height: 100px; 
-            border: 2px solid #0f0; border-radius: 8px; transform: scaleX(-1); z-index: 100; opacity: 0.6;
+            position: absolute; top: 10px; right: 10px; width: 140px; height: 105px; 
+            border: 2px solid #00ff00; border-radius: 8px; transform: scaleX(-1); z-index: 100; opacity: 0.7;
         }
-        #ui { position: absolute; top: 15px; left: 15px; color: #fff; z-index: 100; text-shadow: 2px 2px #000; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; z-index: 100; font-size: 18px; font-weight: bold; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 5px; }
     </style>
 </head>
 <body>
 
-    <div id="ui">SKOR: <span id="score">0</span></div>
+    <div id="ui">SKOR: <span id="score">0</span> | HIZ: <span id="speedDisplay">0</span></div>
     <video id="webcam" autoplay playsinline style="display:none"></video>
     <canvas id="video-preview"></canvas>
     <div id="game-container"></div>
@@ -29,6 +29,7 @@
         const previewCanvas = document.getElementById("video-preview");
         const previewCtx = previewCanvas.getContext("2d");
         const scoreElement = document.getElementById("score");
+        const speedDisplay = document.getElementById("speedDisplay");
 
         let handLandmarker;
         let lastVideoTime = -1;
@@ -41,47 +42,52 @@
             parent: 'game-container',
             width: window.innerWidth,
             height: window.innerHeight,
-            physics: { default: 'arcade' },
+            physics: { default: 'arcade', arcade: { debug: false } },
             scene: { preload, create, update }
         };
 
         const game = new Phaser.Game(config);
         let player, roadLines, enemies;
-        let speed = 10;
+        let roadSpeed = 10;
 
         function preload() {
-            // Araba Görselleri (Pixel Art veya Render - Base64 formatında)
-            // Oyuncu Arabası (Kırmızı)
-            this.textures.addBase64('playerCar', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAABQCAYAAABvQD9DAAAACXBIWXMAAAsTAAALEwEAmpwYAAABMUlEQVR4nO2Y0Q3CMAxEn7shG6AjMAs7MAs7sAIdoRsgI/vHA6mSInXatEn7pAtI8XN8XmInSZo8SZo8SZo8SXo8fS73S9e8GqAB9A7XfAI0gAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNJ0ADaAAa4A2I+SPLoL3DNZ8ADaABaIA3IOaPLIP2Dtd8AjSABqAB3oCYP7IM2jtc8wnQABqABngDYv7IMmjvcM0nQANoABrgDYj5I8ugvcM1nwANoAFogDcg5o8sg/YO13wCNIAGoAHegJg/sgzaO1zzCdAAGoAGeANi/sgyaO9wzSdAAmgAGuANiPkjy6C9wzWfAA2gAWiANyDmjyyD9g7XfAIkgAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNP79K3/oY/v0tAAAAAElFTkSuQmCC');
-            // Rakip Araba (Mavi)
-            this.textures.addBase64('enemyCar', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAABQCAYAAABvQD9DAAAACXBIWXMAAAsTAAALEwEAmpwYAAABNklEQVR4nO2Y0Q3CMAxEn7MBG6AjMAs7MAs7sAIdoRsgI/v78VCqInXatEn7pAtI8XN8XmInSZo8SZo8SZo8SXo8fS73S9e8GqAB9A7XfAI0gAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNJ0ADaAAa4A2I+SPLoL3DNZ8ADaABaIA3IOaPLIP2Dtd8AjSABqAB3oCYP7IM2jtc8wnQABqABngDYv7IMmjvcM0nQANoABrgDYj5I8ugvcM1nwANoAFogDcg5o8sg/YO13wCNIAGoAHegJg/sgzaO1zzCdAAGoAGeANi/sgyaO9wzSdAAmgAGuANiPkjy6C9wzWfAA2gAWiANyDmjyyD9g7XfAIkgAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNP79f6PoYnC67jwAAAABJFTkSuQmCC');
+            // EKLEDİĞİN GÖRSEL BURADA YÜKLENİYOR
+            this.load.image('playerCar', 'car.png');
+            
+            // Rakip araba (Base64 - her ihtimale karşı kodda dursun)
+            this.textures.addBase64('enemyCar', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAABQCAYAAABvQD9DAAAACXBIWXMAAAsTAAALEwEAmpwYAAABMUlEQVR4nO2Y0Q3CMAxEn7shG6AjMAs7MAs7sAIdoRsgI/vHA6mSInXatEn7pAtI8XN8XmInSZo8SZo8SZo8SXo8fS73S9e8GqAB9A7XfAI0gAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNJ0ADaAAa4A2I+SPLoL3DNZ8ADaABaIA3IOaPLIP2Dtd8AjSABqAB3oCYP7IM2jtc8wnQABqABngDYv7IMmjvcM0nQANoABrgDYj5I8ugvcM1nwANoAFogDcg5o8sg/YO13wCNIAGoAHegJg/sgzaO1zzCdAAGoAGeANi/sgyaO9wzSdAAmgAGuANiPkjy6C9wzWfAA2gAWiANyDmjyyD9g7XfAIkgAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNP79K3/oY/v0tAAAAAElFTkSuQmCC');
         }
 
         function create() {
             gameActive = true;
+            score = 0;
+            roadSpeed = 10;
+
+            // Yol Arka Planı
             this.add.rectangle(config.width/2, config.height/2, config.width * 0.7, config.height, 0x333333);
             
             // Yol Çizgileri
             roadLines = this.add.group();
-            for(let i=0; i<10; i++) {
-                roadLines.add(this.add.rectangle(config.width/2, i * 120, 10, 60, 0xffffff));
+            for(let i=0; i<12; i++) {
+                roadLines.add(this.add.rectangle(config.width/2, i * 100, 8, 50, 0xffffff));
             }
 
-            // Oyuncu Arabası
-            player = this.physics.add.sprite(config.width/2, config.height - 150, 'playerCar').setScale(0.8);
+            // OYUNCU ARABASI (Senin car.png görselin)
+            player = this.physics.add.sprite(config.width/2, config.height - 150, 'playerCar');
+            player.setScale(0.5); // S23 Ultra ekranına göre boyutu buradan ayarla (0.4 - 0.7 arası idealdir)
             player.setCollideWorldBounds(true);
 
-            // Rakip Arabalar Grubu
+            // Rakipler
             enemies = this.physics.add.group();
 
-            // Rakip Üretme Döngüsü
+            // Rakip Oluşturma
             this.time.addEvent({
-                delay: 1200,
+                delay: 1000,
                 callback: () => {
                     if(!gameActive) return;
                     let x = Phaser.Math.Between(config.width * 0.25, config.width * 0.75);
                     let enemy = enemies.create(x, -100, 'enemyCar').setScale(0.8);
-                    enemy.setTint(Phaser.Utils.Array.GetRandom([0x00ffff, 0xffff00, 0xffaa00]));
+                    enemy.setTint(Phaser.Utils.Array.GetRandom([0x00ffff, 0xffff00, 0xff00ff]));
                 },
                 loop: true
             });
@@ -89,11 +95,13 @@
             // Çarpışma
             this.physics.add.overlap(player, enemies, () => {
                 gameActive = false;
-                this.cameras.main.shake(500, 0.02);
-                this.time.delayedCall(1000, () => {
+                this.cameras.main.shake(400, 0.01);
+                this.add.text(config.width/2, config.height/2, 'KAZA YAPTI!\nYENİDEN BAŞLIYOR...', { 
+                    fontSize: '32px', fill: '#f00', align: 'center', backgroundColor: '#000' 
+                }).setOrigin(0.5);
+                
+                this.time.delayedCall(2000, () => {
                     this.scene.restart();
-                    score = 0;
-                    speed = 10;
                 });
             });
         }
@@ -101,28 +109,37 @@
         function update() {
             if(!gameActive) return;
 
-            // Yol ve Engellerin Akışı
+            // Yol Akışı
             roadLines.getChildren().forEach(line => {
-                line.y += speed;
-                if (line.y > config.height) line.y = -60;
+                line.y += roadSpeed;
+                if (line.y > config.height) line.y = -50;
             });
 
+            // Rakiplerin Akışı
             enemies.getChildren().forEach(enemy => {
-                enemy.y += speed + 2; // Rakipler biraz daha hızlı gelsin
+                enemy.y += roadSpeed + 3;
                 if (enemy.y > config.height + 100) enemy.destroy();
             });
 
-            // AI Direksiyon Kontrolü
+            // AI DİREKSİYON KONTROLÜ
+            // Hedef X koordinatı: Orta nokta + (direksiyon açısı * hassasiyet)
             let targetX = (config.width / 2) + (steeringAngle * 8);
-            player.x = Phaser.Math.Linear(player.x, targetX, 0.15);
+            player.x = Phaser.Math.Linear(player.x, targetX, 0.15); // Yumuşak geçiş
+            
+            // Arabanın asfalt dışına çıkmasını engelle
+            player.x = Phaser.Math.Clamp(player.x, config.width * 0.22, config.width * 0.78);
+            
+            // Görsel efekt: Arabayı direksiyon yönüne hafifçe yatır
             player.angle = steeringAngle * 0.4;
 
-            score++;
+            // Skor ve Zorluk
+            score += 1;
             scoreElement.innerText = Math.floor(score / 10);
-            speed += 0.001;
+            speedDisplay.innerText = Math.floor(roadSpeed * 15) + " KM/H";
+            roadSpeed += 0.001; 
         }
 
-        // --- AI ---
+        // --- MEDIAPIPE AI ---
         async function initAI() {
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
@@ -137,7 +154,7 @@
         }
 
         function startKamera() {
-            navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+            navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } }).then(s => {
                 video.srcObject = s;
                 video.addEventListener("loadeddata", predict);
             });
@@ -149,7 +166,13 @@
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 const result = handLandmarker.detectForVideo(video, performance.now());
+                
+                // Önizleme kamerasını çiz
+                previewCtx.save();
+                previewCtx.scale(-1, 1);
+                previewCtx.translate(-previewCanvas.width, 0);
                 previewCtx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
+                previewCtx.restore();
 
                 if (result.landmarks && result.landmarks.length === 2) {
                     const h1 = result.landmarks[0][0];
@@ -157,7 +180,7 @@
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
                     if (deg > 90) deg -= 180;
                     if (deg < -90) deg += 180;
-                    steeringAngle = -deg * 2;
+                    steeringAngle = -deg * 2; // Hassasiyet çarpanı
                 }
             }
             requestAnimationFrame(predict);
