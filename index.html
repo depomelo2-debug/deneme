@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>S23 Ultra - NES Music Racer</title>
+    <title>S23 Ultra - NES Master Racer</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
         #webcam { display: none; }
+        
         #start-screen {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             background: #000; z-index: 500; display: flex; flex-direction: column;
@@ -17,27 +18,30 @@
         .menu-btn {
             width: 280px; padding: 15px; margin: 10px; border: 4px double #fff;
             background: #000; color: #fff; font-weight: bold; cursor: pointer;
+            transition: 0.2s;
         }
         .menu-btn:hover { background: #fff; color: #000; }
-        #ui-side { position: absolute; top: 20px; left: 140px; color: #fff; z-index: 200; display: none; }
+
+        #ui-side { position: absolute; top: 20px; left: 140px; color: #fff; z-index: 200; display: none; text-shadow: 2px 2px #000; }
+        #kmh-box { font-size: 32px; font-weight: bold; color: #00ff00; }
     </style>
 </head>
 <body>
 
     <div id="start-screen">
-        <h1 style="color:#ffff00; text-shadow: 2px 2px #f00;">ROAD FIGHTER NES</h1>
+        <h1 style="color:#ffff00; text-shadow: 3px 3px #f00; font-size: 40px;">ROAD FIGHTER</h1>
         <button class="menu-btn" onclick="startGame('camera')">1. AI CAMERA</button>
         <button class="menu-btn" onclick="startGame('gyro')">2. PHONE TILT</button>
         <button class="menu-btn" onclick="startGame('keyboard')">3. KEYBOARD</button>
-        <p style="color: #666; font-size: 12px; margin-top: 10px;">Müzik için bir moda tıkla!</p>
+        <p style="color: #666; font-size: 14px; margin-top: 20px;">READY PLAYER ONE?</p>
     </div>
 
     <div id="ui-side">
-        <div style="color: #ffff00;">SCORE</div>
-        <div style="font-size: 24px;" id="score">000000</div>
+        <div style="color: #ffff00; font-size: 16px;">1P SCORE</div>
+        <div style="font-size: 28px;" id="score">000000</div>
         <br>
-        <div style="color: #ffff00;">SPEED</div>
-        <div style="font-size: 24px;"><span id="kmh">0</span> km/h</div>
+        <div style="color: #ffff00; font-size: 16px;">VELOCITY</div>
+        <div id="kmh-box"><span id="kmh">0</span> km/h</div>
     </div>
 
     <video id="webcam" autoplay playsinline></video>
@@ -51,11 +55,11 @@
         let steeringInput = 0; 
         let throttleInput = 0.5;
         let lastVideoTime = -1;
+        let bgMusic;
         
         const video = document.getElementById("webcam");
 
         window.startGame = async function(mode) {
-            // Tarayıcıların ses politikası gereği kullanıcı etkileşimi ile sesi başlatıyoruz
             if (game.sound.context.state === 'suspended') {
                 game.sound.context.resume();
             }
@@ -67,9 +71,8 @@
             if (mode === 'camera') await initAI();
             else if (mode === 'gyro') initGyro();
             
-            // Müziği döngü halinde başlat
             if (bgMusic && !bgMusic.isPlaying) {
-                bgMusic.play({ loop: true, volume: 0.5 });
+                bgMusic.play({ loop: true, volume: 0.4 });
             }
             
             document.documentElement.requestFullscreen().catch(() => {});
@@ -86,16 +89,16 @@
 
         const game = new Phaser.Game(config);
         let player, roadLines, decorGroup, enemies, cursors, smoothSteer = 0;
-        let bgMusic; // Müzik değişkeni
 
         function preload() {
+            // Görsel Yüklemeleri
             this.load.image('playerCar', 'car.png');
             this.load.image('enemy1', 'car1.png');
             this.load.image('enemy2', 'car2.png');
             this.load.image('enemy3', 'car3.png');
             this.load.image('enemy4', 'car4.png');
             
-            // Müzik dosyasını yüklüyoruz
+            // Ses Yüklemesi
             this.load.audio('gameMusic', 'bgm.mp3'); 
         }
 
@@ -103,35 +106,37 @@
             const w = this.cameras.main.width;
             const h = this.cameras.main.height;
 
-            // Arka plan müziğini tanımla
             bgMusic = this.sound.add('gameMusic');
 
-            // NES Görsel Paneller (Yeşil ekran detayı)
+            // Yol ve NES Yan Paneller
             const roadW = w * 0.55;
-            this.add.rectangle(w/2 - roadW/2 - 100, h/2, 200, h, 0x00aa00);
-            this.add.rectangle(w/2 + roadW/2 + 100, h/2, 200, h, 0x00aa00);
-            this.add.rectangle(w/2, h/2, roadW + 20, h, 0xffffff); 
-            this.add.rectangle(w/2, h/2, roadW, h, 0x333333); 
+            this.add.rectangle(w/2 - roadW/2 - 100, h/2, 200, h, 0x008800); // Çimen Sol
+            this.add.rectangle(w/2 + roadW/2 + 100, h/2, 200, h, 0x008800); // Çimen Sağ
+            this.add.rectangle(w/2, h/2, roadW + 15, h, 0xffffff); // Beyaz Şeritler
+            this.add.rectangle(w/2, h/2, roadW, h, 0x222222); // Asfalt
 
             roadLines = this.add.group();
             decorGroup = this.add.group();
             enemies = this.physics.add.group();
 
             for(let i=0; i<12; i++) {
-                roadLines.add(this.add.rectangle(w/2, i * 120, 10, 60, 0xffffff));
-                decorGroup.add(this.add.circle(w/2 - roadW/2 - 60, i * 180, 25, 0x004400));
-                decorGroup.add(this.add.circle(w/2 + roadW/2 + 60, i * 180, 25, 0x004400));
+                roadLines.add(this.add.rectangle(w/2, i * 130, 8, 50, 0x555555));
+                decorGroup.add(this.add.circle(w/2 - roadW/2 - 60, i * 200, 25, 0x004400));
+                decorGroup.add(this.add.circle(w/2 + roadW/2 + 60, i * 200, 25, 0x004400));
             }
 
-            player = this.physics.add.sprite(w/2, h - 150, 'playerCar').setScale(0.5).setDepth(100);
+            // Oyuncu Aracı
+            player = this.physics.add.sprite(w/2, h - 150, 'playerCar').setScale(0.55).setDepth(100);
             
+            // Trafik Üretimi
             this.time.addEvent({
-                delay: 2000,
+                delay: 2500,
                 callback: () => {
                     if (!window.controlMode) return;
-                    let xPos = Phaser.Math.Between(w/2 - roadW/2 + 40, w/2 + roadW/2 - 40);
+                    let xPos = Phaser.Math.Between(w/2 - roadW/2 + 50, w/2 + roadW/2 - 50);
                     let randomKey = 'enemy' + Phaser.Math.Between(1, 4);
-                    enemies.create(xPos, -100, randomKey).setScale(0.5);
+                    let enemy = enemies.create(xPos, -100, randomKey).setScale(0.55);
+                    enemy.setDepth(90);
                 },
                 loop: true
             });
@@ -142,18 +147,21 @@
         function update() {
             if (!window.controlMode) return;
 
+            // 1. KONTROL MANTIĞI (Merkeze dönme düzeltildi)
             if (window.controlMode === 'keyboard') {
-                if (cursors.left.isDown) steeringInput -= 0.05;
-                else if (cursors.right.isDown) steeringInput += 0.05;
+                if (cursors.left.isDown) steeringInput -= 0.04;
+                else if (cursors.right.isDown) steeringInput += 0.04;
+                // Tuş bırakıldığında steeringInput olduğu gibi kalır (Sticky Steering)
+                
                 steeringInput = Phaser.Math.Clamp(steeringInput, -1, 1);
-                throttleInput = cursors.up.isDown ? 0.2 : 0.8;
+                throttleInput = cursors.up.isDown ? 0.3 : 0.8; // Hızı sınırladık
             }
 
-            smoothSteer = Phaser.Math.Linear(smoothSteer, steeringInput, 0.1);
-            let speed = Phaser.Math.Linear(35, 5, throttleInput);
-
-            // Müzik perdesini (pitch) hıza göre hafifçe değiştirebiliriz (Opsiyonel)
-            // if(bgMusic) bgMusic.setRate(0.8 + (speed / 40));
+            // 2. HIZ VE HAREKET (180 km/h limit düzenlemesi)
+            smoothSteer = Phaser.Math.Linear(smoothSteer, steeringInput, 0.08); // Yağ gibi akma
+            
+            // Maksimum hızı 16 seviyesine çektim (Eskiden 35'ti)
+            let speed = Phaser.Math.Linear(16, 4, throttleInput);
 
             roadLines.getChildren().forEach(line => {
                 line.y += speed;
@@ -166,25 +174,29 @@
             });
 
             enemies.getChildren().forEach(enemy => {
-                enemy.y += speed * 0.7; 
-                if (enemy.y > this.cameras.main.height + 100) enemy.destroy();
+                enemy.y += speed * 0.65; // Trafik bizden yavaş
+                if (enemy.y > this.cameras.main.height + 150) enemy.destroy();
             });
 
-            player.x = (this.cameras.main.width/2) + (smoothSteer * (this.cameras.main.width * 0.3));
-            player.angle = smoothSteer * 15;
+            // Direksiyon Sınırları
+            let roadLimit = this.cameras.main.width * 0.24;
+            player.x = (this.cameras.main.width/2) + (smoothSteer * (this.cameras.main.width * 0.28));
+            player.x = Phaser.Math.Clamp(player.x, this.cameras.main.width/2 - roadLimit, this.cameras.main.width/2 + roadLimit);
+            player.angle = smoothSteer * 12;
 
-            document.getElementById("kmh").innerText = Math.floor(speed * 9);
-            document.getElementById("score").innerText = String(Math.floor(speed * 100)).padStart(6, '0');
+            // UI GÜNCELLEME
+            let kmhValue = Math.floor(speed * 8); // Artık max ~128 km/h civarı gösterir
+            document.getElementById("kmh").innerText = kmhValue;
+            document.getElementById("score").innerText = String(Math.floor(speed * 120)).padStart(6, '0');
         }
 
-        // Kamera ve Gyro fonksiyonları aynı kalıyor...
         async function initAI() {
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, delegate: "GPU" },
                 runningMode: "VIDEO", numHands: 2
             });
-            navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then(s => {
                 video.srcObject = s; video.addEventListener("loadeddata", predictCamera);
             });
         }
@@ -199,11 +211,13 @@
 
         async function predictCamera() {
             if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
                 const res = handLandmarker.detectForVideo(video, performance.now());
                 if (res.landmarks && res.landmarks.length === 2) {
                     let h1 = res.landmarks[0][0], h2 = res.landmarks[1][0];
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
-                    steeringInput = -deg / 18; 
+                    if (deg > 90) deg -= 180; if (deg < -90) deg += 180;
+                    steeringInput = -deg / 15; 
                     throttleInput = (h1.y + h2.y) / 2;
                 }
             }
