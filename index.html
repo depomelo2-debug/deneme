@@ -3,38 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>S23 Ultra - Smooth AI Racer</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
+    <title>S23 Ultra - NES Master Racer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
         #webcam { display: none; }
+        
+        /* CRT Ekran Efekti */
+        #game-container::after {
+            content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 150; background-size: 100% 4px, 3px 100%; pointer-events: none;
+        }
+
+        /* Modern HUD - Uçak Göstergesi Stili */
         #hud-container {
-            position: absolute; top: 20px; right: 20px;
+            position: absolute; top: 25px; right: 25px;
             width: 100px; height: 100px;
-            border: 3px solid #0f0; border-radius: 50%;
-            background: rgba(0, 0, 0, 0.5); z-index: 100;
+            border: 3px solid #ff0055; border-radius: 50%;
+            background: rgba(255, 0, 85, 0.1); z-index: 200;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 0 15px rgba(255, 0, 85, 0.5);
         }
         #horizon-dot {
             position: absolute; top: 50%; left: 50%;
-            width: 12px; height: 12px; background: #0f0;
+            width: 14px; height: 14px; background: #fff;
             border-radius: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #fff;
         }
-        #ui-side {
+
+        /* NES Font & UI */
+        #ui-overlay {
             position: absolute; top: 20px; left: 140px; 
-            color: #fff; z-index: 100; font-family: monospace;
+            color: #fff; z-index: 200; font-family: 'Courier New', monospace;
+            text-transform: uppercase; letter-spacing: 2px;
         }
+        .retro-label { color: #ffff00; font-size: 14px; margin-bottom: 5px; }
+        .retro-value { color: #fff; font-size: 24px; font-weight: bold; }
+
         #fs-button {
-            position: absolute; bottom: 30px; left: 30px; z-index: 200;
-            padding: 15px 30px; background: #fff; color: #000; border: none; font-weight: bold;
+            position: absolute; bottom: 40px; left: 40px; z-index: 300;
+            padding: 15px 35px; background: #ff0055; color: #fff; border: none;
+            font-family: monospace; font-weight: bold; cursor: pointer;
+            clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%);
         }
     </style>
 </head>
 <body>
 
-    <div id="ui-side">1P SCORE: <span id="score">000000</span><br><br><span id="kmh">0</span> km/h</div>
+    <div id="ui-overlay">
+        <div class="retro-label">Top Score</div>
+        <div class="retro-value" id="score">000000</div>
+        <br>
+        <div class="retro-label">Velocity</div>
+        <div class="retro-value"><span id="kmh">0</span> km/h</div>
+    </div>
+
     <div id="hud-container"><div id="horizon-dot"></div></div>
-    <button id="fs-button">YARIŞI BAŞLAT</button>
+    
+    <button id="fs-button">PUSH START</button>
     <video id="webcam" autoplay playsinline></video>
     <div id="game-container"></div>
 
@@ -49,11 +78,10 @@
         let handLandmarker;
         let lastVideoTime = -1;
         
-        // FİLTRELEME DEĞİŞKENLERİ
-        let rawSteeringAngle = 0;
-        let smoothSteeringAngle = 0;
-        let lerpFactor = 0.08; // NE KADAR KÜÇÜKSE O KADAR YAĞ GİBİ AKAR (0.05 - 0.1 arası ideal)
-        
+        // --- SENSITIVITY & FILTERING ---
+        let rawSteering = 0;
+        let smoothSteering = 0;
+        let lerpCoeff = 0.07; // Yağ gibi akma katsayısı
         let handHeight = 0.5;
         let isTracking = false;
 
@@ -67,13 +95,12 @@
             parent: 'game-container',
             width: window.innerWidth,
             height: window.innerHeight,
-            physics: { default: 'arcade' },
             scene: { preload, create, update }
         };
 
         const game = new Phaser.Game(config);
-        let player, roadGroup, decorGroup;
-        let currentSpeed = 0;
+        let player, roadGroup, trees, progressCar;
+        let speed = 0;
 
         function preload() {
             this.load.image('playerCar', 'car.png');
@@ -83,66 +110,89 @@
             const w = this.cameras.main.width;
             const h = this.cameras.main.height;
 
-            // Retro Katmanlar
-            this.add.rectangle(60, h/2, 120, h, 0x888888); 
-            const roadWidth = w * 0.55;
-            this.add.rectangle(w/2, h/2, roadWidth + 20, h, 0xffffff); 
-            this.add.rectangle(w/2, h/2, roadWidth, h, 0x333333); 
+            // 1. LEFT DASHBOARD (NES Style)
+            this.add.rectangle(60, h/2, 120, h, 0x111111).setDepth(10);
+            this.add.rectangle(60, h/2, 6, h * 0.7, 0x333333).setDepth(11); // Track line
+            progressCar = this.add.rectangle(60, h * 0.8, 15, 25, 0xff0055).setDepth(12);
+
+            // 2. THE ROAD
+            const roadWidth = w * 0.5;
+            this.add.rectangle(w/2, h/2, roadWidth + 20, h, 0xffffff); // White Borders
+            this.add.rectangle(w/2, h/2, roadWidth, h, 0x222222); // Asphalt
             
-            this.add.rectangle(w/2 - roadWidth/2 - 100, h/2, 200, h, 0x008800);
-            this.add.rectangle(w/2 + roadWidth/2 + 100, h/2, 200, h, 0x008800);
+            // Grass - Modern Gradient vibe
+            this.add.rectangle(w/2 - roadWidth/2 - 150, h/2, 300, h, 0x004411);
+            this.add.rectangle(w/2 + roadWidth/2 + 150, h/2, 300, h, 0x004411);
 
             roadGroup = this.add.group();
-            decorGroup = this.add.group();
+            trees = this.add.group();
 
-            for(let i=0; i<12; i++) {
-                roadGroup.add(this.add.rectangle(w/2, i * 120, 10, 50, 0xffffff));
-                decorGroup.add(this.add.circle(w/2 - roadWidth/2 - 60, i * 180, 25, 0x004400));
-                decorGroup.add(this.add.circle(w/2 + roadWidth/2 + 60, i * 180, 25, 0x004400));
+            for(let i=0; i<15; i++) {
+                roadGroup.add(this.add.rectangle(w/2, i * 120, 8, 50, 0x555555));
+                
+                // Pixelated trees
+                let tL = this.add.rectangle(w/2 - roadWidth/2 - 70, i * 200, 30, 30, 0x00aa44);
+                let tR = this.add.rectangle(w/2 + roadWidth/2 + 70, i * 200, 30, 30, 0x00aa44);
+                trees.add(tL); trees.add(tR);
             }
 
-            player = this.physics.add.sprite(w/2, h - 150, 'playerCar').setScale(0.5).setDepth(100);
+            // 3. PLAYER CAR
+            player = this.add.sprite(w/2, h - 160, 'playerCar').setScale(0.55).setDepth(100);
+            
+            // Ezel name tag (Modern NES touch)
+            this.add.text(0, -70, "EZEL-85", { 
+                font: "bold 14px Arial", fill: "#ff0055", backgroundColor: "#000" 
+            }).setOrigin(0.5).setParentContainer(player);
         }
 
         function update() {
             const w = this.cameras.main.width;
             const h = this.cameras.main.height;
 
-            // HIZ MANTIĞI
-            let targetSpeed = Phaser.Math.Linear(30, 2, handHeight);
-            currentSpeed = Phaser.Math.Linear(currentSpeed, targetSpeed, 0.05);
+            // PHYSICS & SPEED
+            let targetSpeed = Phaser.Math.Linear(38, 4, handHeight);
+            speed = Phaser.Math.Linear(speed, targetSpeed, 0.06);
 
             roadGroup.getChildren().forEach(line => {
-                line.y += currentSpeed;
+                line.y += speed;
                 if (line.y > h) line.y = -100;
             });
 
-            decorGroup.getChildren().forEach(obj => {
-                obj.y += currentSpeed;
-                if (obj.y > h) obj.y = -100;
+            trees.getChildren().forEach(t => {
+                t.y += speed;
+                if (t.y > h) t.y = -100;
             });
 
-            // --- PÜRÜZSÜZ DİREKSİYON (TİTREŞİM ENGELLEYİCİ) ---
-            // Deadzone: Eğer açı çok küçükse (0-2 derece) hareket etme
-            if (Math.abs(rawSteeringAngle) < 2) rawSteeringAngle = 0;
+            // DASHBOARD PROGRESS
+            progressCar.y = (h * 0.8) - ((speed * 15) % (h * 0.6));
 
-            // Low Pass Filter (Yavaşça hedefe yaklaşma)
-            smoothSteeringAngle = Phaser.Math.Linear(smoothSteeringAngle, rawSteeringAngle, lerpFactor);
+            // STEERING SMOOTHING (Titreşim Engelleyici)
+            if (Math.abs(rawSteering) < 1.5) rawSteering = 0; // Deadzone
+            smoothSteering = Phaser.Math.Linear(smoothSteering, rawSteering, lerpCoeff);
 
-            let targetX = (w / 2) + (smoothSteeringAngle * 28);
-            player.x = Phaser.Math.Linear(player.x, targetX, 0.1); // Ekstra yumuşatma
+            let targetX = (w / 2) + (smoothSteering * 32);
+            player.x = Phaser.Math.Linear(player.x, targetX, 0.15);
             
-            let limit = w * 0.25;
-            player.x = Phaser.Math.Clamp(player.x, w/2 - limit, w/2 + limit);
-            player.angle = smoothSteeringAngle * 0.4;
+            let roadLimit = w * 0.24;
+            player.x = Phaser.Math.Clamp(player.x, w/2 - roadLimit, w/2 + roadLimit);
+            player.angle = smoothSteering * 0.5;
 
-            // HUD
-            hud.style.borderColor = isTracking ? "#0f0" : "#f00";
-            dot.style.left = `${50 + (smoothSteeringAngle * 2.5)}%`;
+            // HUD FEEDBACK
+            if (isTracking) {
+                hud.style.borderColor = "#00ff88";
+                hud.style.boxShadow = "0 0 20px rgba(0, 255, 136, 0.4)";
+                dot.style.background = "#fff";
+            } else {
+                hud.style.borderColor = "#ff0055";
+                hud.style.boxShadow = "0 0 20px rgba(255, 0, 85, 0.4)";
+                dot.style.background = "#ff0055";
+            }
+
+            dot.style.left = `${50 + (smoothSteering * 2.5)}%`;
             dot.style.top = `${50 + ((handHeight - 0.5) * 100)}%`;
 
-            document.getElementById("kmh").innerText = Math.floor(currentSpeed * 8);
-            document.getElementById("score").innerText = String(Math.floor(currentSpeed * 50)).padStart(6, '0');
+            document.getElementById("kmh").innerText = Math.floor(speed * 9);
+            document.getElementById("score").innerText = String(Math.floor(speed * 60)).padStart(6, '0');
         }
 
         async function initAI() {
@@ -152,13 +202,8 @@
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
                     delegate: "GPU"
                 },
-                runningMode: "VIDEO",
-                numHands: 2
+                runningMode: "VIDEO", numHands: 2
             });
-            startKamera();
-        }
-
-        function startKamera() {
             navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then(s => {
                 video.srcObject = s;
                 video.addEventListener("loadeddata", predict);
@@ -168,27 +213,18 @@
         async function predict() {
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
-                const result = handLandmarker.detectForVideo(video, performance.now());
-
-                if (result.landmarks && result.landmarks.length === 2) {
+                const res = handLandmarker.detectForVideo(video, performance.now());
+                if (res.landmarks && res.landmarks.length === 2) {
                     isTracking = true;
-                    const h1 = result.landmarks[0][0];
-                    const h2 = result.landmarks[1][0];
+                    let h1 = res.landmarks[0][0], h2 = res.landmarks[1][0];
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
-                    if (deg > 90) deg -= 180;
-                    if (deg < -90) deg += 180;
-                    
-                    rawSteeringAngle = -deg * 1.5; // Ham veri
+                    if (deg > 90) deg -= 180; if (deg < -90) deg += 180;
+                    rawSteering = -deg * 1.8;
                     handHeight = (h1.y + h2.y) / 2;
-                } else {
-                    isTracking = false;
-                    rawSteeringAngle = 0;
-                    handHeight = 0.8;
-                }
+                } else { isTracking = false; rawSteering = 0; handHeight = 0.8; }
             }
             requestAnimationFrame(predict);
         }
-
         initAI();
     </script>
 </body>
