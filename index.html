@@ -3,30 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S23 Ultra - AI Road Fighter</title>
+    <title>S23 Ultra - 2 Player AI Road Fighter</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; font-family: 'Press Start 2P', cursive; } /* Pixel font ekleyebiliriz */
-        #game-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #game-container { width: 100vw; height: 100vh; }
         #video-preview { 
-            position: absolute; bottom: 10px; right: 10px; width: 160px; height: 120px; 
-            border: 2px solid #00ff00; border-radius: 8px; transform: scaleX(-1); z-index: 10; opacity: 0.7;
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%) scaleX(-1); 
+            width: 240px; height: 180px; border: 2px solid #0f0; border-radius: 10px; z-index: 100; opacity: 0.8;
         }
-        #ui-info { position: absolute; top: 10px; left: 10px; color: #0f0; z-index: 20; background: rgba(0,0,0,0.5); padding: 5px; pointer-events: none; font-size: 14px; }
-        @font-face {
-            font-family: 'Press Start 2P';
-            src: url('https://fonts.cdnfonts.com/s/17210/PressStart2P-Regular.woff') format('woff');
-        }
+        .ui { position: absolute; top: 20px; color: white; z-index: 50; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; font-size: 12px; }
+        #p1-ui { left: 20px; border-left: 5px solid #00f; }
+        #p2-ui { right: 20px; border-right: 5px solid #f00; }
     </style>
 </head>
 <body>
 
-    <div id="ui-info">
-        Açı: <span id="angleText">0</span>°<br>
-        Hız: <span id="speedText">0</span> KM/H<br>
-        Skor: <span id="scoreText">0</span>
-    </div>
+    <div id="p1-ui" class="ui">P1 (SOL): <span id="p1-score">0</span></div>
+    <div id="p2-ui" class="ui">P2 (SAĞ): <span id="p2-score">0</span></div>
+    
     <video id="webcam" autoplay playsinline style="display:none"></video>
     <canvas id="video-preview"></canvas>
     <div id="game-container"></div>
@@ -34,207 +30,105 @@
     <script type="module">
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
-        // Global değişkenler
         const video = document.getElementById("webcam");
         const previewCanvas = document.getElementById("video-preview");
         const previewCtx = previewCanvas.getContext("2d");
-        const angleText = document.getElementById("angleText");
-        const speedText = document.getElementById("speedText");
-        const scoreText = document.getElementById("scoreText");
 
         let handLandmarker;
         let lastVideoTime = -1;
-        let steeringAngle = 0; // -90 ile +90 arası direksiyon açısı
+        
+        // Direksiyon açıları
+        let p1Angle = 0;
+        let p2Angle = 0;
 
-        let gameSpeed = 5; // Başlangıç hızı
-        let score = 0;
-        let gameOver = false;
-
-        // --- PHASER OYUN MOTORU AYARLARI ---
         const config = {
             type: Phaser.AUTO,
             parent: 'game-container',
             width: window.innerWidth,
             height: window.innerHeight,
-            physics: {
-                default: 'arcade',
-                arcade: {
-                    debug: false // Çarpışma kutularını görmek için true yap
-                }
-            },
+            physics: { default: 'arcade' },
             scene: { preload, create, update }
         };
 
         const game = new Phaser.Game(config);
-        let playerCar;
-        let roadLines;
-        let obstacles; // Engeller grubu
-        let roadWidth = 0.8; // Yolun ekran genişliğine oranı
-        let currentRoadCenterX; // Yolun anlık merkez X koordinatı
-        let roadCurve = 0; // Yolun eğrilik derecesi
-        let roadCurveChangeTimer = 0; // Yol eğriliğini değiştirmek için zamanlayıcı
+        let p1Car, p2Car, roadLines, obstacles;
+        let speed = 7;
+        let p1Active = true, p2Active = true;
 
-        const playerCarSpeed = 2; // Oyuncunun yoldaki hızı (RoadFighter'daki gibi)
-
-        function preload() {
-            // Yüklenecek herhangi bir görsel yoksa boş kalır
-            // Eğer gerçek araba/engel görselleri eklemek istersek buraya yazılır
-            // this.load.image('car', 'assets/car.png');
-        }
+        function preload() {}
 
         function create() {
-            gameOver = false;
-            score = 0;
-            gameSpeed = 5;
-            currentRoadCenterX = config.width / 2;
-            roadCurve = 0;
+            // Orta çizgi (Ekranı bölen)
+            this.add.rectangle(config.width/2, config.height/2, 4, config.height, 0x555555);
 
-            // Arka plan (Siyah veya koyu gri)
-            this.add.rectangle(config.width/2, config.height/2, config.width, config.height, 0x1a1a1a).setDepth(0);
-
-            // Yol çizgileri
+            // Yol çizgileri grubu
             roadLines = this.add.group();
-            for(let i=0; i<20; i++) { // Daha fazla çizgi ile akışkanlık
-                let line = this.add.rectangle(config.width/2, i * 60, 10, 40, 0xffffff);
-                roadLines.add(line);
+            for(let i=0; i<15; i++) {
+                roadLines.add(this.add.rectangle(config.width * 0.25, i * 80, 8, 40, 0xffffff));
+                roadLines.add(this.add.rectangle(config.width * 0.75, i * 80, 8, 40, 0xffffff));
             }
 
-            // Oyuncu Arabası
-            playerCar = this.physics.add.image(config.width/2, config.height - 120, 'playerCar')
-                        .setDisplaySize(60, 100) // Boyutlandırma
-                        .setTint(0x0000ff) // Mavi araba
-                        .setImmovable(true); // Engellere çarptığında yerinden oynamasın
-            playerCar.body.setCollideWorldBounds(false); // Ekran dışına çıkabilir
+            // P1 Araba (Mavi)
+            p1Car = this.physics.add.rectangle(config.width * 0.25, config.height - 100, 50, 80, 0x0000ff);
+            // P2 Araba (Kırmızı)
+            p2Car = this.physics.add.rectangle(config.width * 0.75, config.height - 100, 50, 80, 0xff0000);
 
-            // Engeller grubu
             obstacles = this.physics.add.group();
 
-            // Çarpışma algılama
-            this.physics.add.collider(playerCar, obstacles, hitObstacle, null, this);
-            
-            // Periyodik engel yaratma
-            this.time.addEvent({
-                delay: 700, // Her 0.7 saniyede bir engel
-                callback: createObstacle,
-                callbackScope: this,
-                loop: true
-            });
+            // Çarpışmalar
+            this.physics.add.overlap(p1Car, obstacles, (car, obs) => { p1Active = false; car.setAlpha(0.3); });
+            this.physics.add.overlap(p2Car, obstacles, (car, obs) => { p2Active = false; car.setAlpha(0.3); });
 
-            // Araba hızını RoadFighter gibi yapalım
-            playerCar.setVelocityY(-gameSpeed * 50); // Görsel hız için
+            // Periyodik Engel
+            this.time.addEvent({ delay: 800, callback: addObstacle, callbackScope: this, loop: true });
+        }
+
+        function addObstacle() {
+            // Sol tarafa engel
+            if(p1Active) {
+                let obs1 = this.add.rectangle(Phaser.Math.Between(50, config.width/2 - 50), -50, 40, 40, 0xffff00);
+                obstacles.add(obs1);
+                this.physics.world.enable(obs1);
+            }
+            // Sağ tarafa engel
+            if(p2Active) {
+                let obs2 = this.add.rectangle(Phaser.Math.Between(config.width/2 + 50, config.width - 50), -50, 40, 40, 0xffa500);
+                obstacles.add(obs2);
+                this.physics.world.enable(obs2);
+            }
         }
 
         function update() {
-            if (gameOver) {
-                // Oyun bittiyse sadece bir ekran göster
-                return;
-            }
-
-            // Skor güncelle
-            score += Math.round(gameSpeed * 0.1); // Hızla orantılı skor
-            scoreText.innerText = score;
-            speedText.innerText = Math.round(gameSpeed * 10); // KM/H gibi görünmesi için
-
-            // Yolun eğriliğini güncelle
-            roadCurveChangeTimer += this.game.loop.delta;
-            if (roadCurveChangeTimer > 3000) { // Her 3 saniyede bir viraj değişsin
-                roadCurve = Phaser.Math.Between(-1, 1); // -1: sola, 0: düz, 1: sağa
-                roadCurveChangeTimer = 0;
-            }
-            // Yolun merkezini viraja göre kaydır
-            currentRoadCenterX += roadCurve * playerCarSpeed;
-            currentRoadCenterX = Phaser.Math.Clamp(currentRoadCenterX, config.width * 0.3, config.width * 0.7); // Yol çok kenara kaymasın
-
-            // Oyuncu arabanın X koordinatını ayarla
-            // steeringAngle = -90 (sol) to +90 (sağ)
-            // Range: -1 (sol kenar) to +1 (sağ kenar)
-            let normalizedSteering = steeringAngle / 90; 
-            // Araba yolu takip etsin
-            let targetCarX = currentRoadCenterX + (normalizedSteering * (config.width * roadWidth / 2 - playerCar.displayWidth / 2));
-            playerCar.x = Phaser.Math.Linear(playerCar.x, targetCarX, 0.1); // Yumuşak geçiş
-            playerCar.angle = steeringAngle * 0.3; // Arabayı hafifçe yan yatır
-
-            // Yol çizgilerini hareket ettir ve viraja göre düzenle
+            // Yol akışı
             roadLines.getChildren().forEach(line => {
-                line.y += gameSpeed; // Hızla orantılı aşağı kaydır
-                if (line.y > config.height + 50) {
-                    line.y = -50; // Tekrar yukarı taşı
-                    line.x = currentRoadCenterX + Phaser.Math.Between(-20, 20); // Hafif rastgelelik
-                }
+                line.y += speed;
+                if(line.y > config.height) line.y = -40;
             });
 
-            // Engelleri hareket ettir ve ekran dışına çıkanları yok et
-            obstacles.getChildren().forEach(obstacle => {
-                obstacle.y += gameSpeed; // Hızla orantılı aşağı kaydır
-                if (obstacle.y > config.height + 50) {
-                    obstacle.destroy(); // Ekran dışına çıkanları sil
-                }
+            // Engelleri aşağı kaydır
+            obstacles.getChildren().forEach(obs => {
+                obs.y += speed;
+                if(obs.y > config.height) obs.destroy();
             });
 
-            // Hızı zamanla arttır (Zorluk)
-            gameSpeed += 0.005; // Yavaşça hızlan
-        }
-
-        // Engel oluşturma fonksiyonu
-        function createObstacle() {
-            if (gameOver) return;
-
-            const obstacleTypes = ['car', 'cone']; // Engel türleri
-            const type = Phaser.Utils.Array.GetRandom(obstacleTypes);
-
-            let obstacleX;
-            let obstacleWidth;
-            let obstacleHeight;
-            let obstacleColor;
-
-            // Yolun genişliğini viraja göre ayarla
-            const currentRoadHalfWidth = (config.width * roadWidth / 2);
-            const minRoadX = currentRoadCenterX - currentRoadHalfWidth + 30; // Sol yol kenarı
-            const maxRoadX = currentRoadCenterX + currentRoadHalfWidth - 30; // Sağ yol kenarı
-
-            if (type === 'car') {
-                obstacleWidth = 50;
-                obstacleHeight = 80;
-                obstacleColor = Phaser.Utils.Array.GetRandom([0xff00ff, 0xffff00, 0x00ffff, 0x9900ff]); // Renkli arabalar
-                obstacleX = Phaser.Math.Between(minRoadX + obstacleWidth/2, maxRoadX - obstacleWidth/2); // Yolda rastgele X
-            } else { // cone (duba)
-                obstacleWidth = 30;
-                obstacleHeight = 40;
-                obstacleColor = 0xffa500; // Turuncu duba
-                // Dubalar yolun kenarlarına daha yakın çıksın
-                obstacleX = Phaser.Math.Between(currentRoadCenterX - currentRoadHalfWidth + obstacleWidth/2 + 5, currentRoadCenterX + currentRoadHalfWidth - obstacleWidth/2 - 5);
+            // P1 Hareket (Ekranın sol yarısında sınırla)
+            if(p1Active) {
+                let p1TargetX = (config.width * 0.25) + (p1Angle * 4);
+                p1Car.x = Phaser.Math.Clamp(p1TargetX, 30, config.width/2 - 30);
+                p1Car.angle = p1Angle * 0.5;
             }
 
-            let obstacle = this.add.rectangle(obstacleX, -50, obstacleWidth, obstacleHeight, obstacleColor);
-            obstacles.add(obstacle);
-            this.physics.world.enable(obstacle);
-            obstacle.body.setImmovable(true);
+            // P2 Hareket (Ekranın sağ yarısında sınırla)
+            if(p2Active) {
+                let p2TargetX = (config.width * 0.75) + (p2Angle * 4);
+                p2Car.x = Phaser.Math.Clamp(p2TargetX, config.width/2 + 30, config.width - 30);
+                p2Car.angle = p2Angle * 0.5;
+            }
+
+            speed += 0.001; // Giderek hızlan
         }
 
-        // Çarpışma durumu
-        function hitObstacle(player, obstacle) {
-            // Çarpışma anında oyun durur
-            gameOver = true;
-            player.setTint(0xff0000); // Arabayı kırmızıya boya
-            
-            // Oyun durdurma ekranı
-            this.add.text(config.width/2, config.height/2 - 50, 'GAME OVER', { fontSize: '48px', fill: '#ff0000', fontFamily: 'Press Start 2P' })
-                .setOrigin(0.5)
-                .setDepth(100);
-            this.add.text(config.width/2, config.height/2 + 20, `Skor: ${score}`, { fontSize: '24px', fill: '#ffffff', fontFamily: 'Press Start 2P' })
-                .setOrigin(0.5)
-                .setDepth(100);
-            this.add.text(config.width/2, config.height/2 + 70, 'Yeniden Başlamak İçin Dokun', { fontSize: '18px', fill: '#00ff00', fontFamily: 'Press Start 2P' })
-                .setOrigin(0.5)
-                .setDepth(100);
-
-            // Oyunu yeniden başlatmak için tıklama
-            this.input.once('pointerdown', () => {
-                this.scene.restart();
-            });
-        }
-
-        // --- MEDIAPIPE AI AYARLARI ---
+        // --- AI MANTIĞI ---
         async function initAI() {
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
@@ -243,14 +137,14 @@
                     delegate: "GPU"
                 },
                 runningMode: "VIDEO",
-                numHands: 2
+                numHands: 4 // 2 kişi = 4 el
             });
             startKamera();
         }
 
         function startKamera() {
-            navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-                video.srcObject = stream;
+            navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+                video.srcObject = s;
                 video.addEventListener("loadeddata", predict);
             });
         }
@@ -258,44 +152,37 @@
         async function predict() {
             previewCanvas.width = video.videoWidth;
             previewCanvas.height = video.videoHeight;
-
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 const result = handLandmarker.detectForVideo(video, performance.now());
+                previewCtx.clearRect(0,0,240,180);
+                previewCtx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
 
-                previewCtx.clearRect(0,0, previewCanvas.width, previewCanvas.height);
-                previewCtx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height); // Kamerayı küçük preview'e çiz
-
-                if (result.landmarks && result.landmarks.length === 2) {
-                    const h1 = result.landmarks[0][0]; // İlk elin bilek noktası
-                    const h2 = result.landmarks[1][0]; // İkinci elin bilek noktası
+                if (result.landmarks && result.landmarks.length >= 2) {
+                    // Elleri ekranın solundaki ve sağındakiler diye ayır
+                    const hands = result.landmarks.sort((a,b) => a[0].x - b[0].x);
                     
-                    let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
-                    if (deg > 90) deg -= 180;
-                    if (deg < -90) deg += 180;
-                    
-                    steeringAngle = -deg * 2; // Hassasiyeti arttırdık
-                    // Direksiyon açısını -45 ile +45 derece arasında sınırla
-                    steeringAngle = Phaser.Math.Clamp(steeringAngle, -45, 45);
-
-                    angleText.innerText = Math.round(steeringAngle);
-
-                    // Debug: preview ekranına eller arasına çizgi çiz
-                    previewCtx.beginPath();
-                    previewCtx.moveTo(h1.x * previewCanvas.width, h1.y * previewCanvas.height);
-                    previewCtx.lineTo(h2.x * previewCanvas.width, h2.y * previewCanvas.height);
-                    previewCtx.strokeStyle = "#00ff00";
-                    previewCtx.lineWidth = 3;
-                    previewCtx.stroke();
-                } else {
-                     // Tek el varsa veya hiç el yoksa direksiyonu sıfırla
-                    steeringAngle = Phaser.Math.Linear(steeringAngle, 0, 0.1); 
+                    // En soldaki iki el P1
+                    if(hands.length >= 2) {
+                        p1Angle = calculateAngle(hands[0][0], hands[1][0]);
+                    }
+                    // En sağdaki iki el P2 (Eğer varsa)
+                    if(hands.length >= 4) {
+                        p2Angle = calculateAngle(hands[2][0], hands[3][0]);
+                    }
                 }
             }
             requestAnimationFrame(predict);
         }
 
-        initAI(); // AI ve kamera başlat
+        function calculateAngle(pt1, pt2) {
+            let deg = Math.atan2(pt2.y - pt1.y, pt2.x - pt1.x) * (180 / Math.PI);
+            if (deg > 90) deg -= 180;
+            if (deg < -90) deg += 180;
+            return Phaser.Math.Clamp(-deg * 2, -45, 45);
+        }
+
+        initAI();
     </script>
 </body>
 </html>
