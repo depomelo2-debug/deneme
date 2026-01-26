@@ -3,48 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>S23 Ultra - AI Driving Simulator</title>
+    <title>S23 Ultra - Retro Road Fighter</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
         #webcam { display: none; }
         
-        /* Dinamik HUD */
+        /* Akıllı HUD Göstergesi */
         #hud-container {
             position: absolute; top: 20px; right: 20px;
-            width: 120px; height: 120px;
-            border: 3px solid #0f0; border-radius: 50%;
-            background: rgba(0, 255, 0, 0.05); z-index: 100;
-            transition: border-color 0.3s, background 0.3s;
+            width: 110px; height: 110px;
+            border: 4px solid #0f0; border-radius: 50%;
+            background: rgba(0, 0, 0, 0.5); z-index: 100;
+            transition: all 0.3s;
         }
         #horizon-dot {
             position: absolute; top: 50%; left: 50%;
-            width: 16px; height: 16px; background: #0f0;
+            width: 14px; height: 14px; background: #0f0;
             border-radius: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 0 20px #0f0;
+            box-shadow: 0 0 15px #0f0;
         }
-        /* Hız Barı */
-        #speed-bar {
-            position: absolute; top: 20px; right: 160px;
-            width: 12px; height: 120px; border: 2px solid #0f0;
+        
+        /* Retro Bilgi Paneli */
+        #ui-side {
+            position: absolute; top: 20px; left: 140px; 
+            color: #fff; z-index: 100; font-family: 'Courier New', Courier, monospace;
+            text-shadow: 2px 2px #000; pointer-events: none;
         }
-        #speed-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: #0f0; box-shadow: 0 0 15px #0f0; }
 
-        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; z-index: 100; font-family: 'Courier New', monospace; font-size: 20px; }
         #fs-button {
             position: absolute; bottom: 30px; left: 30px; z-index: 200;
-            padding: 15px 40px; background: #0f0; color: #000; border: none; font-weight: bold; border-radius: 10px;
+            padding: 15px 30px; background: #fff; color: #000; border: none; font-weight: bold;
         }
     </style>
 </head>
 <body>
 
-    <div id="ui">MOD: SÜRÜŞ EĞİTİMİ<br>HIZ: <span id="kmh">0</span> KM/H</div>
-    <div id="speed-bar"><div id="speed-fill"></div></div>
+    <div id="ui-side">
+        1P SCORE: <span id="score">000000</span><br><br>
+        <span id="kmh">0</span> km/h
+    </div>
+
     <div id="hud-container"><div id="horizon-dot"></div></div>
     
-    <button id="fs-button">SİMÜLASYONU BAŞLAT</button>
+    <button id="fs-button">START MISSION</button>
     <video id="webcam" autoplay playsinline></video>
     <div id="game-container"></div>
 
@@ -54,8 +57,6 @@
         const video = document.getElementById("webcam");
         const dot = document.getElementById("horizon-dot");
         const hud = document.getElementById("hud-container");
-        const speedFill = document.getElementById("speed-fill");
-        const kmhElement = document.getElementById("kmh");
         const fsButton = document.getElementById("fs-button");
 
         let handLandmarker;
@@ -74,13 +75,12 @@
             parent: 'game-container',
             width: window.innerWidth,
             height: window.innerHeight,
-            scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
             physics: { default: 'arcade' },
             scene: { preload, create, update }
         };
 
         const game = new Phaser.Game(config);
-        let player, roadLines;
+        let player, roadGroup, decorGroup;
         let currentSpeed = 0;
 
         function preload() {
@@ -88,67 +88,89 @@
         }
 
         function create() {
-            // Sonsuz Yol Tasarımı
-            this.add.rectangle(this.cameras.main.width/2, this.cameras.main.height/2, this.cameras.main.width * 0.6, this.cameras.main.height, 0x1a1a1a);
+            const w = this.cameras.main.width;
+            const h = this.cameras.main.height;
+
+            // 1. SOL PANEL (Road Fighter Stil)
+            this.add.rectangle(60, h/2, 120, h, 0x888888); // Panel gri alan
+            this.add.rectangle(60, h/2, 10, h * 0.8, 0x000); // İlerleme çubuğu yolu
+            this.progressMarker = this.add.rectangle(60, h * 0.8, 20, 10, 0xf00); // Küçük kırmızı araba ikonu temsilcisi
+
+            // 2. YOL KENARLARI (Yeşil Çimenler)
+            const roadWidth = w * 0.5;
+            this.add.rectangle(w/2, h/2, roadWidth + 80, h, 0xffffff); // Beyaz dış çizgiler
+            this.add.rectangle(w/2, h/2, roadWidth, h, 0x444444); // Asfalt
             
-            roadLines = this.add.group();
-            for(let i=0; i<15; i++) {
-                roadLines.add(this.add.rectangle(this.cameras.main.width/2, i * 100, 10, 60, 0x333333));
+            // Çimenlik Alanlar
+            this.add.rectangle(w/2 - roadWidth/2 - 100, h/2, 200, h, 0x00aa00);
+            this.add.rectangle(w/2 + roadWidth/2 + 100, h/2, 200, h, 0x00aa00);
+
+            // 3. YOL ÇİZGİLERİ VE AĞAÇLAR
+            roadGroup = this.add.group();
+            decorGroup = this.add.group();
+
+            for(let i=0; i<10; i++) {
+                roadGroup.add(this.add.rectangle(w/2, i * 150, 12, 60, 0xffffff));
+                
+                // Sol ve Sağ Ağaçlar (Resimdeki gibi)
+                let treeL = this.add.circle(w/2 - roadWidth/2 - 50, i * 200, 20, 0x004400);
+                let treeR = this.add.circle(w/2 + roadWidth/2 + 50, i * 200, 20, 0x004400);
+                decorGroup.add(treeL);
+                decorGroup.add(treeR);
             }
 
-            player = this.physics.add.sprite(this.cameras.main.width/2, this.cameras.main.height - 150, 'playerCar');
-            player.setScale(0.5);
-            player.setDepth(10);
+            // 4. OYUNCU
+            player = this.physics.add.sprite(w/2, h - 150, 'playerCar').setScale(0.5).setDepth(100);
         }
 
         function update() {
-            // Hızlanma ve Yavaşlama Dinamiği
-            let targetSpeed = Phaser.Math.Linear(30, 2, handHeight);
+            const w = this.cameras.main.width;
+            const h = this.cameras.main.height;
+
+            // Hızlanma/Yavaşlama
+            let targetSpeed = Phaser.Math.Linear(35, 3, handHeight);
             currentSpeed = Phaser.Math.Linear(currentSpeed, targetSpeed, 0.05);
 
-            roadLines.getChildren().forEach(line => {
+            // Yol ve Ağaç Akışı
+            roadGroup.getChildren().forEach(line => {
                 line.y += currentSpeed;
-                if (line.y > this.cameras.main.height) line.y = -60;
-                line.x = this.cameras.main.width/2;
+                if (line.y > h) line.y = -100;
             });
 
-            // --- ULTRA HASSAS DİREKSİYON ---
-            let sensitivity = 30; // S23 Ultra'nın ekran genişliğine göre optimize edildi
-            let targetX = (this.cameras.main.width / 2) + (steeringAngle * sensitivity);
-            
-            // Yağ gibi akma sağlayan yumuşatma (Lerp 0.2)
+            decorGroup.getChildren().forEach(obj => {
+                obj.y += currentSpeed;
+                if (obj.y > h) obj.y = -100;
+            });
+
+            // Sol Paneldeki İlerleme (Skora göre yukarı çıkar)
+            this.progressMarker.y = (h * 0.8) - ((currentSpeed * 10) % (h * 0.6));
+
+            // Direksiyon Hassasiyeti (Yağ gibi!)
+            let targetX = (w / 2) + (steeringAngle * 35);
             player.x = Phaser.Math.Linear(player.x, targetX, 0.2);
             
-            // Pist sınırları
-            let roadLimit = this.cameras.main.width * 0.28;
-            player.x = Phaser.Math.Clamp(player.x, this.cameras.main.width/2 - roadLimit, this.cameras.main.width/2 + roadLimit);
-            
-            // Görsel yatış açısı
-            player.angle = steeringAngle * 0.5;
+            let limit = w * 0.22;
+            player.x = Phaser.Math.Clamp(player.x, w/2 - limit, w/2 + limit);
+            player.angle = steeringAngle * 0.6;
 
-            // --- HUD VE DURUM KONTROLÜ ---
+            // HUD Durum Rengi
             if (isTracking) {
                 hud.style.borderColor = "#0f0";
-                hud.style.background = "rgba(0, 255, 0, 0.1)";
                 dot.style.background = "#0f0";
-                dot.style.boxShadow = "0 0 20px #0f0";
             } else {
                 hud.style.borderColor = "#f00";
-                hud.style.background = "rgba(255, 0, 0, 0.2)";
                 dot.style.background = "#f00";
-                dot.style.boxShadow = "0 0 20px #f00";
             }
 
-            // Gösterge Noktası Pozisyonu
-            dot.style.left = `${50 + (steeringAngle * 2.5)}%`;
+            // Gösterge Noktası
+            dot.style.left = `${50 + (steeringAngle * 3)}%`;
             dot.style.top = `${50 + ((handHeight - 0.5) * 100)}%`;
-            
-            // Hız Barı
-            let speedVisual = Phaser.Math.Linear(100, 0, handHeight);
-            speedFill.style.height = `${speedVisual}%`;
-            kmhElement.innerText = Math.floor(currentSpeed * 10);
+
+            document.getElementById("kmh").innerText = Math.floor(currentSpeed * 8);
+            document.getElementById("score").innerText = String(Math.floor(currentSpeed * 50)).padStart(6, '0');
         }
 
+        // --- AI VE KAMERA ---
         async function initAI() {
             const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
@@ -178,19 +200,15 @@
                     isTracking = true;
                     const h1 = result.landmarks[0][0];
                     const h2 = result.landmarks[1][0];
-                    
-                    // Açı (Direksiyon)
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
                     if (deg > 90) deg -= 180;
                     if (deg < -90) deg += 180;
                     steeringAngle = -deg * 1.8;
-
-                    // Yükseklik (Hız)
                     handHeight = (h1.y + h2.y) / 2;
                 } else {
                     isTracking = false;
-                    steeringAngle *= 0.95; // Eller gidince direksiyon yavaşça düzelir
-                    handHeight = 0.8; // Eller gidince motor freni yapar
+                    steeringAngle *= 0.95;
+                    handHeight = 0.8;
                 }
             }
             requestAnimationFrame(predict);
