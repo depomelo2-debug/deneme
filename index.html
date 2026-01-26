@@ -3,43 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Racer - Ultra Sensitive Mode</title>
+    <title>S23 Ultra - AI Driving Simulator</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
         #webcam { display: none; }
+        
+        /* Dinamik HUD */
         #hud-container {
             position: absolute; top: 20px; right: 20px;
-            width: 100px; height: 100px;
-            border: 2px solid #0f0; border-radius: 50%;
+            width: 120px; height: 120px;
+            border: 3px solid #0f0; border-radius: 50%;
             background: rgba(0, 255, 0, 0.05); z-index: 100;
+            transition: border-color 0.3s, background 0.3s;
         }
         #horizon-dot {
             position: absolute; top: 50%; left: 50%;
-            width: 10px; height: 10px; background: #0f0;
+            width: 16px; height: 16px; background: #0f0;
             border-radius: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 0 15px #0f0;
+            box-shadow: 0 0 20px #0f0;
         }
-        #speed-bar-container {
-            position: absolute; top: 20px; right: 130px;
-            width: 8px; height: 100px; border: 1px solid #0f0; background: rgba(0,0,0,0.5);
+        /* Hız Barı */
+        #speed-bar {
+            position: absolute; top: 20px; right: 160px;
+            width: 12px; height: 120px; border: 2px solid #0f0;
         }
-        #speed-bar-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: #0f0; }
-        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; z-index: 100; font-family: monospace; font-size: 18px; }
+        #speed-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: #0f0; box-shadow: 0 0 15px #0f0; }
+
+        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; z-index: 100; font-family: 'Courier New', monospace; font-size: 20px; }
         #fs-button {
-            position: absolute; bottom: 20px; left: 20px; z-index: 200;
-            padding: 15px 30px; background: #0f0; color: #000; border: none; font-weight: bold; border-radius: 8px;
+            position: absolute; bottom: 30px; left: 30px; z-index: 200;
+            padding: 15px 40px; background: #0f0; color: #000; border: none; font-weight: bold; border-radius: 10px;
         }
     </style>
 </head>
 <body>
 
-    <div id="ui">SKOR: <span id="score">0</span><br>HIZ: <span id="kmh">0</span></div>
-    <div id="speed-bar-container"><div id="speed-bar-fill"></div></div>
+    <div id="ui">MOD: SÜRÜŞ EĞİTİMİ<br>HIZ: <span id="kmh">0</span> KM/H</div>
+    <div id="speed-bar"><div id="speed-fill"></div></div>
     <div id="hud-container"><div id="horizon-dot"></div></div>
     
-    <button id="fs-button">YARIŞI BAŞLAT</button>
+    <button id="fs-button">SİMÜLASYONU BAŞLAT</button>
     <video id="webcam" autoplay playsinline></video>
     <div id="game-container"></div>
 
@@ -48,7 +53,8 @@
 
         const video = document.getElementById("webcam");
         const dot = document.getElementById("horizon-dot");
-        const speedFill = document.getElementById("speed-bar-fill");
+        const hud = document.getElementById("hud-container");
+        const speedFill = document.getElementById("speed-fill");
         const kmhElement = document.getElementById("kmh");
         const fsButton = document.getElementById("fs-button");
 
@@ -56,8 +62,7 @@
         let lastVideoTime = -1;
         let steeringAngle = 0;
         let handHeight = 0.5;
-        let score = 0;
-        let gameActive = true;
+        let isTracking = false;
 
         fsButton.addEventListener('click', () => {
             document.documentElement.requestFullscreen();
@@ -75,58 +80,31 @@
         };
 
         const game = new Phaser.Game(config);
-        let player, roadLines, enemies;
-        let currentSpeed = 10;
+        let player, roadLines;
+        let currentSpeed = 0;
 
         function preload() {
             this.load.image('playerCar', 'car.png');
-            const graphics = this.make.graphics({ x: 0, y: 0, add: false });
-            graphics.fillStyle(0xffffff, 1);
-            graphics.fillRect(0, 0, 45, 80);
-            graphics.generateTexture('enemyCar', 45, 80);
         }
 
         function create() {
-            gameActive = true;
-            this.add.rectangle(this.cameras.main.width/2, this.cameras.main.height/2, this.cameras.main.width * 0.65, this.cameras.main.height, 0x111111);
+            // Sonsuz Yol Tasarımı
+            this.add.rectangle(this.cameras.main.width/2, this.cameras.main.height/2, this.cameras.main.width * 0.6, this.cameras.main.height, 0x1a1a1a);
             
             roadLines = this.add.group();
-            for(let i=0; i<12; i++) {
-                roadLines.add(this.add.rectangle(this.cameras.main.width/2, i * 110, 6, 50, 0x222222));
+            for(let i=0; i<15; i++) {
+                roadLines.add(this.add.rectangle(this.cameras.main.width/2, i * 100, 10, 60, 0x333333));
             }
 
-            player = this.physics.add.sprite(this.cameras.main.width/2, this.cameras.main.height - 130, 'playerCar');
-            player.setScale(0.45); 
-            player.setCollideWorldBounds(true);
-            enemies = this.physics.add.group();
-
-            // BASİT MOD: Engeller daha seyrek (1.2 saniyede bir)
-            this.time.addEvent({
-                delay: 1200, 
-                callback: () => {
-                    if(!gameActive) return;
-                    let range = this.cameras.main.width * 0.28;
-                    let x = Phaser.Math.Between(this.cameras.main.width/2 - range, this.cameras.main.width/2 + range);
-                    let enemy = enemies.create(x, -100, 'enemyCar');
-                    enemy.setTint(Phaser.Utils.Array.GetRandom([0x555555, 0x333333, 0x777777])); // Daha sade renkler
-                },
-                loop: true
-            });
-
-            this.physics.add.overlap(player, enemies, () => {
-                gameActive = false;
-                this.cameras.main.shake(200, 0.02);
-                if (navigator.vibrate) navigator.vibrate(100);
-                this.time.delayedCall(1000, () => { this.scene.restart(); score = 0; });
-            });
+            player = this.physics.add.sprite(this.cameras.main.width/2, this.cameras.main.height - 150, 'playerCar');
+            player.setScale(0.5);
+            player.setDepth(10);
         }
 
         function update() {
-            if(!gameActive) return;
-
-            // Hız Kontrolü (Daha dengeli)
-            let speedMultiplier = Phaser.Math.Linear(2.2, 0.6, handHeight);
-            currentSpeed = 9 * speedMultiplier;
+            // Hızlanma ve Yavaşlama Dinamiği
+            let targetSpeed = Phaser.Math.Linear(30, 2, handHeight);
+            currentSpeed = Phaser.Math.Linear(currentSpeed, targetSpeed, 0.05);
 
             roadLines.getChildren().forEach(line => {
                 line.y += currentSpeed;
@@ -134,28 +112,41 @@
                 line.x = this.cameras.main.width/2;
             });
 
-            enemies.getChildren().forEach(enemy => {
-                enemy.y += currentSpeed + 1.5;
-                if (enemy.y > this.cameras.main.height + 100) enemy.destroy();
-            });
-
-            // --- YÜKSEK HASSASİYETLİ DİREKSİYON ---
-            // Çarpanı 18'den 25'e çıkardım, yumuşatma (0.15) daha tepkisel hale getirildi
-            let targetX = (this.cameras.main.width / 2) + (steeringAngle * 25);
-            player.x = Phaser.Math.Linear(player.x, targetX, 0.25); 
+            // --- ULTRA HASSAS DİREKSİYON ---
+            let sensitivity = 30; // S23 Ultra'nın ekran genişliğine göre optimize edildi
+            let targetX = (this.cameras.main.width / 2) + (steeringAngle * sensitivity);
             
-            let limit = this.cameras.main.width * 0.3;
-            player.x = Phaser.Math.Clamp(player.x, this.cameras.main.width/2 - limit, this.cameras.main.width/2 + limit);
-            player.angle = steeringAngle * 0.45;
+            // Yağ gibi akma sağlayan yumuşatma (Lerp 0.2)
+            player.x = Phaser.Math.Linear(player.x, targetX, 0.2);
+            
+            // Pist sınırları
+            let roadLimit = this.cameras.main.width * 0.28;
+            player.x = Phaser.Math.Clamp(player.x, this.cameras.main.width/2 - roadLimit, this.cameras.main.width/2 + roadLimit);
+            
+            // Görsel yatış açısı
+            player.angle = steeringAngle * 0.5;
 
-            // HUD
-            dot.style.left = `${50 + (steeringAngle * 2)}%`;
+            // --- HUD VE DURUM KONTROLÜ ---
+            if (isTracking) {
+                hud.style.borderColor = "#0f0";
+                hud.style.background = "rgba(0, 255, 0, 0.1)";
+                dot.style.background = "#0f0";
+                dot.style.boxShadow = "0 0 20px #0f0";
+            } else {
+                hud.style.borderColor = "#f00";
+                hud.style.background = "rgba(255, 0, 0, 0.2)";
+                dot.style.background = "#f00";
+                dot.style.boxShadow = "0 0 20px #f00";
+            }
+
+            // Gösterge Noktası Pozisyonu
+            dot.style.left = `${50 + (steeringAngle * 2.5)}%`;
             dot.style.top = `${50 + ((handHeight - 0.5) * 100)}%`;
-            speedFill.style.height = `${Phaser.Math.Linear(100, 0, handHeight)}%`;
             
-            kmhElement.innerText = Math.floor(currentSpeed * 12) + " KM/H";
-            score++;
-            document.getElementById("score").innerText = Math.floor(score / 10);
+            // Hız Barı
+            let speedVisual = Phaser.Math.Linear(100, 0, handHeight);
+            speedFill.style.height = `${speedVisual}%`;
+            kmhElement.innerText = Math.floor(currentSpeed * 10);
         }
 
         async function initAI() {
@@ -184,15 +175,22 @@
                 const result = handLandmarker.detectForVideo(video, performance.now());
 
                 if (result.landmarks && result.landmarks.length === 2) {
+                    isTracking = true;
                     const h1 = result.landmarks[0][0];
                     const h2 = result.landmarks[1][0];
+                    
+                    // Açı (Direksiyon)
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
                     if (deg > 90) deg -= 180;
                     if (deg < -90) deg += 180;
-                    steeringAngle = -deg * 2.2; // Hassasiyet çarpanı artırıldı
+                    steeringAngle = -deg * 1.8;
+
+                    // Yükseklik (Hız)
                     handHeight = (h1.y + h2.y) / 2;
                 } else {
-                    steeringAngle *= 0.8;
+                    isTracking = false;
+                    steeringAngle *= 0.95; // Eller gidince direksiyon yavaşça düzelir
+                    handHeight = 0.8; // Eller gidince motor freni yapar
                 }
             }
             requestAnimationFrame(predict);
