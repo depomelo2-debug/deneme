@@ -3,37 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Racer - Gas & Steering Mode</title>
+    <title>AI Racer - Ultra Sensitive Mode</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
         #webcam { display: none; }
-        
-        /* Gelişmiş HUD */
         #hud-container {
             position: absolute; top: 20px; right: 20px;
-            width: 120px; height: 120px;
+            width: 100px; height: 100px;
             border: 2px solid #0f0; border-radius: 50%;
             background: rgba(0, 255, 0, 0.05); z-index: 100;
         }
         #horizon-dot {
             position: absolute; top: 50%; left: 50%;
-            width: 14px; height: 14px; background: #0f0;
+            width: 10px; height: 10px; background: #0f0;
             border-radius: 50%; transform: translate(-50%, -50%);
-            box-shadow: 0 0 20px #0f0; transition: top 0.1s, left 0.1s;
+            box-shadow: 0 0 15px #0f0;
         }
-        /* Hız Göstergesi (Dikey Bar) */
         #speed-bar-container {
-            position: absolute; top: 20px; right: 150px;
-            width: 10px; height: 120px; border: 1px solid #0f0; background: rgba(0,0,0,0.5);
+            position: absolute; top: 20px; right: 130px;
+            width: 8px; height: 100px; border: 1px solid #0f0; background: rgba(0,0,0,0.5);
         }
-        #speed-bar-fill {
-            position: absolute; bottom: 0; width: 100%;
-            height: 0%; background: #0f0; box-shadow: 0 0 10px #0f0;
-        }
-
-        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; z-index: 100; font-family: monospace; font-size: 18px; line-height: 1.5; }
+        #speed-bar-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: #0f0; }
+        #ui { position: absolute; top: 20px; left: 20px; color: #0f0; z-index: 100; font-family: monospace; font-size: 18px; }
         #fs-button {
             position: absolute; bottom: 20px; left: 20px; z-index: 200;
             padding: 15px 30px; background: #0f0; color: #000; border: none; font-weight: bold; border-radius: 8px;
@@ -42,11 +35,11 @@
 </head>
 <body>
 
-    <div id="ui">SKOR: <span id="score">0</span><br>HIZ: <span id="kmh">0</span> KM/H</div>
+    <div id="ui">SKOR: <span id="score">0</span><br>HIZ: <span id="kmh">0</span></div>
     <div id="speed-bar-container"><div id="speed-bar-fill"></div></div>
     <div id="hud-container"><div id="horizon-dot"></div></div>
     
-    <button id="fs-button">TAM EKRAN & YARIŞA BAŞLA</button>
+    <button id="fs-button">YARIŞI BAŞLAT</button>
     <video id="webcam" autoplay playsinline></video>
     <div id="game-container"></div>
 
@@ -62,7 +55,7 @@
         let handLandmarker;
         let lastVideoTime = -1;
         let steeringAngle = 0;
-        let handHeight = 0.5; // 0 (üst) ile 1 (alt) arası
+        let handHeight = 0.5;
         let score = 0;
         let gameActive = true;
 
@@ -84,61 +77,57 @@
         const game = new Phaser.Game(config);
         let player, roadLines, enemies;
         let currentSpeed = 10;
-        let baseSpeed = 8;
 
         function preload() {
             this.load.image('playerCar', 'car.png');
-            // Düşmanlar için kareler
             const graphics = this.make.graphics({ x: 0, y: 0, add: false });
             graphics.fillStyle(0xffffff, 1);
-            graphics.fillRect(0, 0, 50, 85);
-            graphics.generateTexture('enemyCar', 50, 85);
+            graphics.fillRect(0, 0, 45, 80);
+            graphics.generateTexture('enemyCar', 45, 80);
         }
 
         function create() {
             gameActive = true;
-            this.add.rectangle(this.cameras.main.width/2, this.cameras.main.height/2, this.cameras.main.width * 0.6, this.cameras.main.height, 0x111111);
+            this.add.rectangle(this.cameras.main.width/2, this.cameras.main.height/2, this.cameras.main.width * 0.65, this.cameras.main.height, 0x111111);
             
             roadLines = this.add.group();
-            for(let i=0; i<15; i++) {
-                roadLines.add(this.add.rectangle(this.cameras.main.width/2, i * 100, 8, 60, 0x333333));
+            for(let i=0; i<12; i++) {
+                roadLines.add(this.add.rectangle(this.cameras.main.width/2, i * 110, 6, 50, 0x222222));
             }
 
-            player = this.physics.add.sprite(this.cameras.main.width/2, this.cameras.main.height - 120, 'playerCar');
-            player.setScale(0.4); 
+            player = this.physics.add.sprite(this.cameras.main.width/2, this.cameras.main.height - 130, 'playerCar');
+            player.setScale(0.45); 
             player.setCollideWorldBounds(true);
             enemies = this.physics.add.group();
 
+            // BASİT MOD: Engeller daha seyrek (1.2 saniyede bir)
             this.time.addEvent({
-                delay: 800,
+                delay: 1200, 
                 callback: () => {
                     if(!gameActive) return;
-                    let range = this.cameras.main.width * 0.26;
+                    let range = this.cameras.main.width * 0.28;
                     let x = Phaser.Math.Between(this.cameras.main.width/2 - range, this.cameras.main.width/2 + range);
                     let enemy = enemies.create(x, -100, 'enemyCar');
-                    enemy.setTint(Phaser.Utils.Array.GetRandom([0xff0000, 0xffff00, 0x00ff00, 0x0000ff]));
+                    enemy.setTint(Phaser.Utils.Array.GetRandom([0x555555, 0x333333, 0x777777])); // Daha sade renkler
                 },
                 loop: true
             });
 
             this.physics.add.overlap(player, enemies, () => {
                 gameActive = false;
-                this.cameras.main.shake(300, 0.04);
-                if (navigator.vibrate) navigator.vibrate(200); // S23 Ultra Titreşim!
-                this.time.delayedCall(1500, () => { this.scene.restart(); score = 0; currentSpeed = 10; });
+                this.cameras.main.shake(200, 0.02);
+                if (navigator.vibrate) navigator.vibrate(100);
+                this.time.delayedCall(1000, () => { this.scene.restart(); score = 0; });
             });
         }
 
         function update() {
             if(!gameActive) return;
 
-            // HIZ HESAPLAMA: Eller yukarıdaysa (handHeight küçükse) hız artar
-            // handHeight 0 (tepe) -> Hız çarpanı 2.5x
-            // handHeight 1 (alt) -> Hız çarpanı 0.5x
-            let speedMultiplier = Phaser.Math.Linear(2.5, 0.5, handHeight);
-            currentSpeed = baseSpeed * speedMultiplier;
+            // Hız Kontrolü (Daha dengeli)
+            let speedMultiplier = Phaser.Math.Linear(2.2, 0.6, handHeight);
+            currentSpeed = 9 * speedMultiplier;
 
-            // Yol ve düşman akışı hıza göre değişir
             roadLines.getChildren().forEach(line => {
                 line.y += currentSpeed;
                 if (line.y > this.cameras.main.height) line.y = -60;
@@ -146,28 +135,26 @@
             });
 
             enemies.getChildren().forEach(enemy => {
-                enemy.y += currentSpeed + 2;
+                enemy.y += currentSpeed + 1.5;
                 if (enemy.y > this.cameras.main.height + 100) enemy.destroy();
             });
 
-            // Direksiyon
-            let targetX = (this.cameras.main.width / 2) + (steeringAngle * 18);
-            player.x = Phaser.Math.Linear(player.x, targetX, 0.15);
-            let limit = this.cameras.main.width * 0.28;
+            // --- YÜKSEK HASSASİYETLİ DİREKSİYON ---
+            // Çarpanı 18'den 25'e çıkardım, yumuşatma (0.15) daha tepkisel hale getirildi
+            let targetX = (this.cameras.main.width / 2) + (steeringAngle * 25);
+            player.x = Phaser.Math.Linear(player.x, targetX, 0.25); 
+            
+            let limit = this.cameras.main.width * 0.3;
             player.x = Phaser.Math.Clamp(player.x, this.cameras.main.width/2 - limit, this.cameras.main.width/2 + limit);
-            player.angle = steeringAngle * 0.4;
+            player.angle = steeringAngle * 0.45;
 
-            // HUD Güncelleme
-            let dotX = 50 + (steeringAngle * 1.5); 
-            let dotY = 50 + ((handHeight - 0.5) * 100); 
-            dot.style.left = `${Phaser.Math.Clamp(dotX, 10, 90)}%`;
-            dot.style.top = `${Phaser.Math.Clamp(dotY, 10, 90)}%`;
+            // HUD
+            dot.style.left = `${50 + (steeringAngle * 2)}%`;
+            dot.style.top = `${50 + ((handHeight - 0.5) * 100)}%`;
+            speedFill.style.height = `${Phaser.Math.Linear(100, 0, handHeight)}%`;
             
-            let speedPercent = Phaser.Math.Linear(100, 0, handHeight);
-            speedFill.style.height = `${speedPercent}%`;
-            
-            kmhElement.innerText = Math.floor(currentSpeed * 15);
-            score += Math.floor(currentSpeed / 5);
+            kmhElement.innerText = Math.floor(currentSpeed * 12) + " KM/H";
+            score++;
             document.getElementById("score").innerText = Math.floor(score / 10);
         }
 
@@ -199,19 +186,13 @@
                 if (result.landmarks && result.landmarks.length === 2) {
                     const h1 = result.landmarks[0][0];
                     const h2 = result.landmarks[1][0];
-                    
-                    // AÇI (Direksiyon)
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
                     if (deg > 90) deg -= 180;
                     if (deg < -90) deg += 180;
-                    steeringAngle = -deg * 2;
-
-                    // YÜKSEKLİK (Gaz)
-                    // İki elin y koordinatının ortalamasını alıyoruz (0 tepe, 1 alt)
+                    steeringAngle = -deg * 2.2; // Hassasiyet çarpanı artırıldı
                     handHeight = (h1.y + h2.y) / 2;
                 } else {
-                    steeringAngle *= 0.9;
-                    handHeight = 0.8; // Eller yoksa yavaşla
+                    steeringAngle *= 0.8;
                 }
             }
             requestAnimationFrame(predict);
