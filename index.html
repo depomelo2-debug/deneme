@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S23 Ultra - AI Racer Fix</title>
+    <title>S23 Ultra - AI Racer Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
         #video-preview { 
             position: absolute; top: 10px; right: 10px; width: 140px; height: 100px; 
-            border: 2px solid #0f0; border-radius: 8px; transform: scaleX(-1); z-index: 100;
+            border: 2px solid #0f0; border-radius: 8px; transform: scaleX(-1); z-index: 100; opacity: 0.6;
         }
-        #stats { position: absolute; top: 10px; left: 10px; color: #0f0; z-index: 100; font-weight: bold; }
+        #ui { position: absolute; top: 15px; left: 15px; color: #fff; z-index: 100; text-shadow: 2px 2px #000; }
     </style>
 </head>
 <body>
 
-    <div id="stats">SKOR: <span id="score">0</span></div>
+    <div id="ui">SKOR: <span id="score">0</span></div>
     <video id="webcam" autoplay playsinline style="display:none"></video>
     <canvas id="video-preview"></canvas>
     <div id="game-container"></div>
@@ -34,6 +34,7 @@
         let lastVideoTime = -1;
         let steeringAngle = 0;
         let score = 0;
+        let gameActive = true;
 
         const config = {
             type: Phaser.AUTO,
@@ -45,75 +46,80 @@
         };
 
         const game = new Phaser.Game(config);
-        let player, roadLines, obstacles;
-        let speed = 8;
+        let player, roadLines, enemies;
+        let speed = 10;
 
-        function preload() {}
+        function preload() {
+            // Araba Görselleri (Pixel Art veya Render - Base64 formatında)
+            // Oyuncu Arabası (Kırmızı)
+            this.textures.addBase64('playerCar', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAABQCAYAAABvQD9DAAAACXBIWXMAAAsTAAALEwEAmpwYAAABMUlEQVR4nO2Y0Q3CMAxEn7shG6AjMAs7MAs7sAIdoRsgI/vHA6mSInXatEn7pAtI8XN8XmInSZo8SZo8SZo8SXo8fS73S9e8GqAB9A7XfAI0gAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNJ0ADaAAa4A2I+SPLoL3DNZ8ADaABaIA3IOaPLIP2Dtd8AjSABqAB3oCYP7IM2jtc8wnQABqABngDYv7IMmjvcM0nQANoABrgDYj5I8ugvcM1nwANoAFogDcg5o8sg/YO13wCNIAGoAHegJg/sgzaO1zzCdAAGoAGeANi/sgyaO9wzSdAAmgAGuANiPkjy6C9wzWfAA2gAWiANyDmjyyD9g7XfAIkgAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNP79K3/oY/v0tAAAAAElFTkSuQmCC');
+            // Rakip Araba (Mavi)
+            this.textures.addBase64('enemyCar', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAABQCAYAAABvQD9DAAAACXBIWXMAAAsTAAALEwEAmpwYAAABNklEQVR4nO2Y0Q3CMAxEn7MBG6AjMAs7MAs7sAIdoRsgI/v78VCqInXatEn7pAtI8XN8XmInSZo8SZo8SZo8SXo8fS73S9e8GqAB9A7XfAI0gAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNJ0ADaAAa4A2I+SPLoL3DNZ8ADaABaIA3IOaPLIP2Dtd8AjSABqAB3oCYP7IM2jtc8wnQABqABngDYv7IMmjvcM0nQANoABrgDYj5I8ugvcM1nwANoAFogDcg5o8sg/YO13wCNIAGoAHegJg/sgzaO1zzCdAAGoAGeANi/sgyaO9wzSdAAmgAGuANiPkjy6C9wzWfAA2gAWiANyDmjyyD9g7XfAIkgAagAd6AmD+yDNo7XPMJ0AAagAZ4A2L+yDJo73DNP79f6PoYnC67jwAAAABJFTkSuQmCC');
+        }
 
         function create() {
-            // Asfalt
-            this.add.rectangle(config.width/2, config.height/2, config.width * 0.7, config.height, 0x222222);
+            gameActive = true;
+            this.add.rectangle(config.width/2, config.height/2, config.width * 0.7, config.height, 0x333333);
             
-            // Yol Kenarları (Çimen/Emniyet Şeridi)
-            this.add.rectangle(config.width * 0.15, config.height/2, config.width * 0.05, config.height, 0x006600);
-            this.add.rectangle(config.width * 0.85, config.height/2, config.width * 0.05, config.height, 0x006600);
-
             // Yol Çizgileri
             roadLines = this.add.group();
             for(let i=0; i<10; i++) {
-                roadLines.add(this.add.rectangle(config.width/2, i * 100, 10, 50, 0xffffff));
+                roadLines.add(this.add.rectangle(config.width/2, i * 120, 10, 60, 0xffffff));
             }
 
-            // Oyuncu Arabası (Sabit Y ekseni!)
-            player = this.add.rectangle(config.width/2, config.height - 150, 50, 80, 0xff0000);
-            this.physics.add.existing(player);
+            // Oyuncu Arabası
+            player = this.physics.add.sprite(config.width/2, config.height - 150, 'playerCar').setScale(0.8);
+            player.setCollideWorldBounds(true);
 
-            obstacles = this.physics.add.group();
+            // Rakip Arabalar Grubu
+            enemies = this.physics.add.group();
 
-            // Engel Yaratıcı
+            // Rakip Üretme Döngüsü
             this.time.addEvent({
-                delay: 1000,
+                delay: 1200,
                 callback: () => {
-                    let x = Phaser.Math.Between(config.width * 0.2, config.width * 0.8);
-                    let obs = this.add.rectangle(x, -50, 40, 40, 0x00ff00);
-                    obstacles.add(obs);
-                    this.physics.world.enable(obs);
+                    if(!gameActive) return;
+                    let x = Phaser.Math.Between(config.width * 0.25, config.width * 0.75);
+                    let enemy = enemies.create(x, -100, 'enemyCar').setScale(0.8);
+                    enemy.setTint(Phaser.Utils.Array.GetRandom([0x00ffff, 0xffff00, 0xffaa00]));
                 },
                 loop: true
             });
 
-            // Çarpışma Kontrolü
-            this.physics.add.overlap(player, obstacles, () => {
-                this.scene.restart();
-                score = 0;
-                speed = 8;
+            // Çarpışma
+            this.physics.add.overlap(player, enemies, () => {
+                gameActive = false;
+                this.cameras.main.shake(500, 0.02);
+                this.time.delayedCall(1000, () => {
+                    this.scene.restart();
+                    score = 0;
+                    speed = 10;
+                });
             });
         }
 
         function update() {
-            // Yol Akışı
+            if(!gameActive) return;
+
+            // Yol ve Engellerin Akışı
             roadLines.getChildren().forEach(line => {
                 line.y += speed;
-                if (line.y > config.height) line.y = -50;
+                if (line.y > config.height) line.y = -60;
             });
 
-            // Engellerin Akışı
-            obstacles.getChildren().forEach(obs => {
-                obs.y += speed;
-                if (obs.y > config.height) obs.destroy();
+            enemies.getChildren().forEach(enemy => {
+                enemy.y += speed + 2; // Rakipler biraz daha hızlı gelsin
+                if (enemy.y > config.height + 100) enemy.destroy();
             });
 
-            // Direksiyon Kontrolü (Hassas ve Sınırlı)
-            let targetX = (config.width / 2) + (steeringAngle * 6);
-            player.x = Phaser.Math.Linear(player.x, targetX, 0.2);
-            
-            // Arabanın yoldan çıkmasını engelle
-            player.x = Phaser.Math.Clamp(player.x, config.width * 0.2, config.width * 0.8);
-            player.angle = steeringAngle * 0.5;
+            // AI Direksiyon Kontrolü
+            let targetX = (config.width / 2) + (steeringAngle * 8);
+            player.x = Phaser.Math.Linear(player.x, targetX, 0.15);
+            player.angle = steeringAngle * 0.4;
 
             score++;
             scoreElement.innerText = Math.floor(score / 10);
-            speed += 0.002; // Zamanla hızlan
+            speed += 0.001;
         }
 
         // --- AI ---
@@ -151,7 +157,7 @@
                     let deg = Math.atan2(h2.y - h1.y, h2.x - h1.x) * (180 / Math.PI);
                     if (deg > 90) deg -= 180;
                     if (deg < -90) deg += 180;
-                    steeringAngle = -deg * 1.5;
+                    steeringAngle = -deg * 2;
                 }
             }
             requestAnimationFrame(predict);
