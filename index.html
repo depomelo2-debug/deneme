@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Road Fighter - Balanced Edition</title>
+    <title>Road Fighter - 1 Minute Challenge</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
@@ -19,9 +19,7 @@
             background: #111; color: #888; font-size: 18px; font-weight: bold;
             transition: 0.2s; outline: none; cursor: pointer; text-align: center;
         }
-        .menu-btn.active, .menu-btn:hover {
-            border-color: #ffff00; color: #fff; background: #222; transform: scale(1.05); box-shadow: 0 0 20px #f00;
-        }
+        .menu-btn.active, .menu-btn:hover { border-color: #ffff00; color: #fff; box-shadow: 0 0 20px #f00; }
         #ui-side { position: absolute; top: 20px; right: 5%; color: #fff; z-index: 200; display: none; text-align: right; }
         .retro-label { color: #ffff00; font-size: 14px; }
         .retro-value { font-size: 28px; font-weight: bold; margin-bottom: 5px; }
@@ -35,7 +33,8 @@
         <h1 style="color:#ffff00; text-shadow: 3px 3px #f00; font-size: 36px; margin-bottom:30px;">ROAD FIGHTER</h1>
         <div class="menu-btn active" onclick="startGame('camera')">1. AI CAMERA</div>
         <div class="menu-btn" onclick="startGame('gyro')">2. PHONE TILT</div>
-        <div class="menu-btn" onclick="startGame('keyboard')">3. REMOTE / KEYS / TOUCH</div>
+        <div class="menu-btn" onclick="startGame('keyboard')">3. TOUCH / REMOTE / KEYS</div>
+        <p style="color: #666; font-size: 14px; margin-top: 20px;">TELEFONDA DOKUNUP SÜRÜKLEYİN</p>
     </div>
 
     <div id="ui-side">
@@ -71,12 +70,15 @@
                 if (e.key === 'ArrowUp') { currentIdx = (currentIdx + 2) % 3; updateMenu(); }
                 if (e.key === 'Enter') startGame(modes[currentIdx]);
             } else if (window.controlMode === 'keyboard') {
-                if (e.key === 'ArrowLeft') steeringInput -= 0.15;
-                if (e.key === 'ArrowRight') steeringInput += 0.15;
+                if (e.key === 'ArrowLeft') steeringInput = -1;
+                if (e.key === 'ArrowRight') steeringInput = 1;
                 if (e.key === 'ArrowUp') throttleInput = 0.35;
             }
         });
-        window.addEventListener('keyup', (e) => { if (e.key === 'ArrowUp') throttleInput = 0.8; });
+        window.addEventListener('keyup', (e) => { 
+            if (e.key === 'ArrowUp') throttleInput = 0.8; 
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') steeringInput = 0;
+        });
         function updateMenu() { menuBtns.forEach((btn, i) => btn.classList.toggle('active', i === currentIdx)); }
 
         window.startGame = async function(mode) {
@@ -138,18 +140,26 @@
 
             player = this.physics.add.sprite(w/2, h - 140, 'playerCar').setScale(0.5).setDepth(100);
             
-            // ÇARPIŞMALAR: Düşman Araçlar
+            // --- MOBİL DOKUNMATİK (ELLE YÖNETME) ---
+            this.input.on('pointermove', (pointer) => {
+                if (window.controlMode === 'keyboard' && pointer.isDown) {
+                    let centerX = window.innerWidth / 2;
+                    steeringInput = (pointer.x - centerX) / (window.innerWidth / 4);
+                    throttleInput = 0.35;
+                }
+            });
+            this.input.on('pointerup', () => { if(window.controlMode === 'keyboard') { throttleInput = 0.8; steeringInput = 0; } });
+
+            // ÇARPIŞMALAR
             this.physics.add.overlap(player, enemies, (p, e) => {
                 if (isInvincible) return;
                 fuel -= 15; isInvincible = true;
-                player.setAlpha(0.5); 
-                currentSpeed *= 0.5; // Hızı anlık kes
-                this.time.delayedCall(1500, () => { isInvincible = false; player.setAlpha(1); });
+                player.setAlpha(0.5); currentSpeed *= 0.4;
+                this.time.delayedCall(2000, () => { isInvincible = false; player.setAlpha(1); });
             });
 
-            // ÇARPIŞMALAR: Mavi Yakıt Aracı (ÖZEL GRUP)
             this.physics.add.overlap(player, fuels, (p, f) => {
-                fuel = Math.min(fuel + 35, 100); 
+                fuel = Math.min(fuel + 30, 100); 
                 f.destroy(); 
                 score += 1000;
                 isTurbo = true; player.setTint(0x00ffff);
@@ -157,16 +167,16 @@
             });
 
             this.time.addEvent({
-                delay: 2200,
+                delay: 2000,
                 callback: () => {
                     if (!window.controlMode || isGameOver) return;
                     let xPos = Phaser.Math.Between(w/2 - roadW/2 + 40, w/2 + roadW/2 - 40);
-                    if (Math.random() < 0.25) { // Yakıt çıkma şansı
+                    if (Math.random() < 0.15) {
                         let f = fuels.create(xPos, -100, 'special').setTint(0x00ffff).setScale(0.5).setDepth(95);
                     } else {
                         let r = 'enemy' + Phaser.Math.Between(1, 4);
                         let enemy = enemies.create(xPos, -100, r).setScale(0.5).setDepth(90);
-                        if (Math.random() > 0.7) {
+                        if (Math.random() > 0.8) {
                             this.tweens.add({ targets: enemy, x: enemy.x + (Math.random() > 0.5 ? 60 : -60), duration: 2000, yoyo: true, repeat: -1 });
                         }
                     }
@@ -183,38 +193,38 @@
             if (fuel <= 0) targetSpeed = 0;
             currentSpeed = Phaser.Math.Linear(currentSpeed, targetSpeed, 0.04);
 
-            if (currentSpeed > 2) fuel -= 0.035; 
+            if (currentSpeed > 2) fuel -= 0.035; // Yakıt bitme süresi ~50-60 saniye
 
             steeringInput = Phaser.Math.Clamp(steeringInput, -1, 1);
-            smoothSteer = Phaser.Math.Linear(smoothSteer, steeringInput, 0.08);
+            smoothSteer = Phaser.Math.Linear(smoothSteer, steeringInput, 0.1);
             
             roadLines.getChildren().forEach(l => { l.y += currentSpeed; if (l.y > this.cameras.main.height) l.y = -100; });
             decorGroup.getChildren().forEach(d => { d.y += currentSpeed; if (d.y > this.cameras.main.height) d.y = -100; });
-            
-            [enemies, fuels].forEach(group => {
-                group.getChildren().forEach(e => {
-                    e.y += currentSpeed * 0.65;
-                    if (e.y > this.cameras.main.height + 100) e.destroy();
-                });
-            });
+            [enemies, fuels].forEach(g => { g.getChildren().forEach(e => { 
+                e.y += currentSpeed * 0.65; if (e.y > this.cameras.main.height + 100) e.destroy(); 
+            }); });
 
             player.x = (this.cameras.main.width/2) + (smoothSteer * (this.cameras.main.width * 0.28));
-            player.angle = smoothSteer * 10;
+            player.angle = smoothSteer * 12;
 
-            // MESAFE AYARI: Yarışı 10 kat daha uzattık (0.00008)
+            // --- MESAFE AYARI (1 DAKİKA SÜRECEK ŞEKİLDE) ---
             if (currentSpeed > 1) {
-                distance += currentSpeed * 0.00008; 
+                distance += currentSpeed * 0.0001; // 0.00008'den biraz hızlandırıldı
                 score += Math.floor(currentSpeed / 4);
             }
-            // Sol çubuğun tırmanış hızı (distance * 2500)
-            progressMarker.y = Phaser.Math.Clamp((this.cameras.main.height * 0.85) - (distance * 2500), this.cameras.main.height * 0.1, this.cameras.main.height * 0.85);
+            // Çubuğun tepesi (height * 0.1) bitiş noktasıdır.
+            progressMarker.y = Phaser.Math.Clamp((this.cameras.main.height * 0.85) - (distance * 600), this.cameras.main.height * 0.1, this.cameras.main.height * 0.85);
 
-            document.getElementById("kmh").innerText = Math.floor(currentSpeed * 8);
+            document.getElementById("kmh").innerText = Math.floor(currentSpeed * 12); // Orijinal görünüm için çarpan artırıldı
             document.getElementById("score").innerText = String(score).padStart(6, '0');
             document.getElementById("fuel-bar-fill").style.width = fuel + "%";
 
             if (fuel <= 0 && currentSpeed < 0.4) { isGameOver = true; alert("YAKIT BİTTİ! SKOR: " + score); location.reload(); }
-            if (progressMarker.y <= this.cameras.main.height * 0.11) { isGameOver = true; alert("TEBRİKLER! ETAP TAMAMLANDI!"); location.reload(); }
+            if (progressMarker.y <= this.cameras.main.height * 0.11) {
+                isGameOver = true;
+                alert("TEBRİKLER! ETABI TAMAMLADINIZ! SKOR: " + score);
+                location.reload();
+            }
         }
 
         async function initAI() {
