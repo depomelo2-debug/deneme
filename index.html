@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Road Fighter NES - Ultra Edition</title>
+    <title>S23 Ultra & Mi Box - Universal Racer</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
@@ -17,12 +17,12 @@
         .menu-btn {
             width: 320px; padding: 18px; margin: 12px; border: 4px double #555;
             background: #111; color: #888; font-size: 18px; font-weight: bold;
-            transition: all 0.2s; outline: none;
+            transition: all 0.2s; outline: none; cursor: pointer; text-align: center;
         }
-        /* Kumanda seçimi için parlayan efekt */
-        .menu-btn.active {
+        /* Hem odaklanınca hem üzerine gelince hem de aktifken parlasın */
+        .menu-btn.active, .menu-btn:hover, .menu-btn:focus {
             border-color: #ffff00; color: #fff; background: #222;
-            transform: scale(1.1); box-shadow: 0 0 20px #f00;
+            transform: scale(1.05); box-shadow: 0 0 20px #f00;
         }
         #ui-side { position: absolute; top: 20px; left: 140px; color: #fff; z-index: 200; display: none; text-shadow: 2px 2px #000; }
         #kmh-box { font-size: 32px; font-weight: bold; color: #00ff00; }
@@ -32,10 +32,10 @@
 
     <div id="start-screen">
         <h1 style="color:#ffff00; text-shadow: 3px 3px #f00; font-size: 40px; margin-bottom:40px;">ROAD FIGHTER</h1>
-        <div class="menu-btn active" data-mode="camera">1. AI CAMERA</div>
-        <div class="menu-btn" data-mode="gyro">2. PHONE TILT</div>
-        <div class="menu-btn" data-mode="keyboard">3. KEYBOARD / REMOTE</div>
-        <p style="color: #666; font-size: 14px; margin-top: 20px;">KUMANDA VEYA MOUSE İLE SEÇİN</p>
+        <div class="menu-btn active" data-idx="0" onclick="startGame('camera')">1. AI CAMERA</div>
+        <div class="menu-btn" data-idx="1" onclick="startGame('gyro')">2. PHONE TILT</div>
+        <div class="menu-btn" data-idx="2" onclick="startGame('keyboard')">3. KEYBOARD / REMOTE</div>
+        <p style="color: #666; font-size: 14px; margin-top: 20px;">DOKUNUN VEYA KUMANDA KULLANIN</p>
     </div>
 
     <div id="ui-side">
@@ -52,24 +52,34 @@
     <script type="module">
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
 
-        // --- MENÜ KONTROLÜ (MI BOX FIX) ---
+        // --- HİBRİT MENÜ YÖNETİMİ ---
         let currentIndex = 0;
         const menuButtons = document.querySelectorAll('.menu-btn');
         const modes = ['camera', 'gyro', 'keyboard'];
 
-        function updateMenu() {
+        function updateMenuVisuals() {
             menuButtons.forEach((btn, idx) => {
                 if(idx === currentIndex) btn.classList.add('active');
                 else btn.classList.remove('active');
             });
         }
 
+        // Mouse/Dokunmatik ile üzerine gelince odağı güncelle
+        menuButtons.forEach((btn, idx) => {
+            btn.addEventListener('mouseenter', () => {
+                currentIndex = idx;
+                updateMenuVisuals();
+            });
+        });
+
         window.addEventListener('keydown', (e) => {
             if (window.controlMode === null) {
-                if (e.key === 'ArrowDown') { currentIndex = (currentIndex + 1) % modes.length; updateMenu(); }
-                else if (e.key === 'ArrowUp') { currentIndex = (currentIndex - 1 + modes.length) % modes.length; updateMenu(); }
+                // Menüde Gezinme
+                if (e.key === 'ArrowDown') { currentIndex = (currentIndex + 1) % modes.length; updateMenuVisuals(); }
+                else if (e.key === 'ArrowUp') { currentIndex = (currentIndex - 1 + modes.length) % modes.length; updateMenuVisuals(); }
                 else if (e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 66) { startGame(modes[currentIndex]); }
             } else if (window.controlMode === 'keyboard') {
+                // Oyun İçi Kontrol
                 if (e.key === 'ArrowLeft') steeringInput -= 0.08;
                 if (e.key === 'ArrowRight') steeringInput += 0.08;
                 if (e.key === 'ArrowUp' || e.key === 'Enter') throttleInput = 0.3;
@@ -128,12 +138,11 @@
             const h = this.cameras.main.height;
             bgMusic = this.sound.add('gameMusic');
 
-            // NES Side Panels (UNUTULMADI!)
+            // NES Side Panels
             this.add.rectangle(65, h/2, 130, h, 0x555555).setDepth(5);
             this.add.rectangle(65, h/2, 8, h * 0.7, 0x000).setDepth(6);
             progressMarker = this.add.rectangle(65, h * 0.8, 18, 10, 0xff0000).setDepth(7);
 
-            // Yol & Çimen
             const roadW = w * 0.55;
             this.add.rectangle(w/2 - roadW/2 - 100, h/2, 200, h, 0x008800);
             this.add.rectangle(w/2 + roadW/2 + 100, h/2, 200, h, 0x008800);
@@ -166,12 +175,8 @@
 
         function update() {
             if (!window.controlMode) return;
-
-            // Merkeze dönmeyen pürüzsüz direksiyon
             steeringInput = Phaser.Math.Clamp(steeringInput, -1, 1);
             smoothSteer = Phaser.Math.Linear(smoothSteer, steeringInput, 0.08);
-            
-            // Optimize edilmiş hız (Maks ~130 km/h)
             let speed = Phaser.Math.Linear(16, 4, throttleInput);
 
             roadLines.getChildren().forEach(line => {
@@ -189,13 +194,11 @@
                 if (enemy.y > this.cameras.main.height + 150) enemy.destroy();
             });
 
-            // Sınırlar
             let roadLimit = this.cameras.main.width * 0.24;
             player.x = (this.cameras.main.width/2) + (smoothSteer * (this.cameras.main.width * 0.28));
             player.x = Phaser.Math.Clamp(player.x, this.cameras.main.width/2 - roadLimit, this.cameras.main.width/2 + roadLimit);
             player.angle = smoothSteer * 12;
 
-            // NES İlerleme Çubuğu Güncelleme
             progressMarker.y = (this.cameras.main.height * 0.8) - ((speed * 20) % (this.cameras.main.height * 0.6));
 
             document.getElementById("kmh").innerText = Math.floor(speed * 8);
